@@ -1,14 +1,14 @@
 use super::{
-    OnionPacketVersion, PseudoRandomStream, OnionPacketDescription,
-// OnionPacket, Processed, MAX_HOPS_NUMBER, PayloadHmac,
+    OnionPacketVersion, PseudoRandomStream, OnionPacketDescription, Processed,
 };
-use generic_array::{GenericArray, typenum::U33};
+use generic_array::GenericArray;
 
 #[test]
 fn packet() {
     use secp256k1::{PublicKey, SecretKey};
     use sha2::Sha256;
     use chacha::ChaCha;
+    use generic_array::typenum::U33;
 
     impl PseudoRandomStream for ChaCha {
         fn seed<T>(v: T) -> Self
@@ -58,4 +58,50 @@ fn packet() {
     );
     let packet = description.packet::<Sha256, ChaCha>().unwrap();
     assert_eq!(hex::encode(packet.hmac), reference_hmac_text);
+}
+
+#[test]
+fn path() {
+    use secp256k1::{PublicKey, SecretKey, Secp256k1};
+    use sha2::Sha256;
+    use chacha::ChaCha;
+    use generic_array::typenum::U8;
+    use generic_array::sequence::GenericSequence;
+
+    let context = Secp256k1::new();
+    let secret = SecretKey::new(&mut rand::thread_rng());
+    let (secrets, route): (Vec<SecretKey>, Vec<(PublicKey, _)>) = (0..6)
+        .map(|_| {
+            let secret = SecretKey::new(&mut rand::thread_rng());
+            let public = PublicKey::from_secret_key(&context, &secret);
+            let payload = GenericArray::<u8, U8>::generate(|_| rand::random());
+            (secret, (public, payload))
+        })
+        .unzip();
+
+    let payloads = route.iter().map(|(_, payload)| payload.clone()).collect::<Vec<_>>();
+
+    let description = OnionPacketDescription::new(OnionPacketVersion::_0, secret, route.into_iter(), &[]);
+    let packet = description.packet::<Sha256, ChaCha>().unwrap();
+
+    let (packet, extracted_payloads) = secrets.into_iter().fold((Some(packet), Vec::new()), |(packet, mut payloads), secret| {
+        match packet.unwrap().process::<_, ChaCha, Sha256>(&[], secret).unwrap() {
+            Processed::MoreHops {
+                next: next,
+                output: output,
+            } => {
+                payloads.push(output);
+                (Some(next), payloads)
+            },
+            Processed::ExitNode {
+                output: output,
+            } => {
+                payloads.push(output);
+                (None, payloads)
+            }
+        }
+    });
+
+    assert_eq!(payloads, extracted_payloads);
+    assert_eq!(packet.is_none(), true);
 }

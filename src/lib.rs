@@ -50,10 +50,10 @@ pub trait PseudoRandomStream {
         T: AsRef<[u8]>;
 }
 
-pub const MAX_HOPS_NUMBER: usize = 20;
+const MAX_HOPS_NUMBER: usize = 20;
 
 #[derive(Clone, Default)]
-pub struct PayloadHmac<L, M>
+struct PayloadHmac<L, M>
 where
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
