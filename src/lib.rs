@@ -53,22 +53,19 @@ pub trait PseudoRandomStream {
 pub const MAX_HOPS_NUMBER: usize = 20;
 
 #[derive(Clone, Default)]
-pub struct PayloadHmac<L, D>
+pub struct PayloadHmac<L, M>
 where
     L: ArrayLength<u8>,
-    D: Input + FixedOutput + Default,
-    D::OutputSize: ArrayLength<u8>,
+    M: ArrayLength<u8>,
 {
     data: GenericArray<u8, L>,
-    hmac: GenericArray<u8, D::OutputSize>,
+    hmac: GenericArray<u8, M>,
 }
 
-impl<L, D> PayloadHmac<L, D>
+impl<L, M> PayloadHmac<L, M>
 where
     L: ArrayLength<u8>,
-    D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8>,
+    M: ArrayLength<u8>,
 {
     fn zero() -> Self {
         PayloadHmac {
@@ -78,18 +75,14 @@ where
     }
 
     fn size() -> usize {
-        use generic_array::typenum::marker_traits::Unsigned;
-
-        L::to_usize() + D::OutputSize::to_usize()
+        L::to_usize() + M::to_usize()
     }
 }
 
-impl<'a, L, D, I> BitXorAssign<&'a mut I> for PayloadHmac<L, D>
+impl<'a, L, M, I> BitXorAssign<&'a mut I> for PayloadHmac<L, M>
 where
     L: ArrayLength<u8>,
-    D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8>,
+    M: ArrayLength<u8>,
     I: KeyStream,
 {
     fn bitxor_assign(&mut self, rhs: &'a mut I) {
@@ -98,34 +91,32 @@ where
     }
 }
 
-fn zero_path<L, D>() -> [PayloadHmac<L, D>; MAX_HOPS_NUMBER]
+fn zero_path<L, M>() -> [PayloadHmac<L, M>; MAX_HOPS_NUMBER]
 where
     L: ArrayLength<u8>,
-    D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8>,
+    M: ArrayLength<u8>,
 {
     [
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
-        PayloadHmac::<L, D>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
+        PayloadHmac::<L, M>::zero(),
     ]
 }
 
@@ -159,7 +150,7 @@ where
         }
     }
 
-    pub fn packet<D, S>(self) -> Result<OnionPacket<A, L, D>, A::Error>
+    pub fn packet<D, S>(self) -> Result<OnionPacket<A, L, D::OutputSize>, A::Error>
     where
         D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
         D::BlockSize: ArrayLength<u8> + Clone,
@@ -200,7 +191,7 @@ where
             .map(|(s, p, _, _)| (s, p))?;
 
         let mut hmac = GenericArray::<u8, D::OutputSize>::default();
-        let mut routing_info = zero_path();
+        let mut routing_info = zero_path::<L, D::OutputSize>();
 
         payloads
             .into_iter()
@@ -230,8 +221,8 @@ where
                     for i in 1..length {
                         let rho = KeyType::Rho.key::<_, D>(&shared_secrets[i - 1]);
                         let mut s = S::seed(rho);
-                        let n = (MAX_HOPS_NUMBER - (i - 1)) * PayloadHmac::<L, D>::size();
-                        s.seek_to(n as _).unwrap();
+                        let size = PayloadHmac::<L, D::OutputSize>::size();
+                        s.seek_to((size * (MAX_HOPS_NUMBER - (i - 1))) as _).unwrap();
                         for j in 0..i {
                             routing_info[j + (MAX_HOPS_NUMBER - (length - 1))] ^= &mut s;
                         }
@@ -259,53 +250,49 @@ where
     }
 }
 
-pub struct OnionPacket<A, L, D>
+pub struct OnionPacket<A, L, M>
 where
     A: SecretKey,
     L: ArrayLength<u8>,
-    D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8>,
+    M: ArrayLength<u8>,
 {
     version: OnionPacketVersion,
     ephemeral_public_key: A::PublicKey,
-    routing_info: [PayloadHmac<L, D>; MAX_HOPS_NUMBER],
-    hmac: GenericArray<u8, D::OutputSize>,
+    routing_info: [PayloadHmac<L, M>; MAX_HOPS_NUMBER],
+    hmac: GenericArray<u8, M>,
 }
 
-pub enum Processed<A, L, D>
+pub enum Processed<A, L, M>
 where
     A: SecretKey,
     L: ArrayLength<u8>,
-    D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8>,
+    M: ArrayLength<u8>,
 {
     ExitNode {
         output: GenericArray<u8, L>,
     },
     MoreHops {
-        next: OnionPacket<A, L, D>,
+        next: OnionPacket<A, L, M>,
         output: GenericArray<u8, L>,
     },
 }
 
-impl<A, L, D> OnionPacket<A, L, D>
+impl<A, L, M> OnionPacket<A, L, M>
 where
     A: SecretKey + Array,
     L: ArrayLength<u8> + Clone,
-    D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8> + Clone,
+    M: ArrayLength<u8> + Clone,
 {
-    pub fn process<T, S>(
+    pub fn process<T, S, D>(
         self,
         associated_data: T,
         secret_key: A,
-    ) -> Result<Processed<A, L, D>, Either<A::Error, TagError>>
+    ) -> Result<Processed<A, L, M>, Either<A::Error, TagError>>
     where
         T: AsRef<[u8]>,
         S: PseudoRandomStream + SeekableKeyStream,
+        D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
+        D::BlockSize: ArrayLength<u8> + Clone,
     {
         let contexts = A::contexts();
 
@@ -335,7 +322,7 @@ where
             let mut stream = S::seed(rho);
 
             let mut routing_info_extended = routing_info.to_vec();
-            routing_info_extended.push(PayloadHmac::<L, D>::zero());
+            routing_info_extended.push(PayloadHmac::<L, M>::zero());
             routing_info_extended
                 .iter_mut()
                 .for_each(|x| *x ^= &mut stream);
