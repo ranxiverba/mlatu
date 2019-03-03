@@ -4,14 +4,12 @@
 #[cfg(test)]
 mod test;
 
-use abstract_cryptography::{SecretKey, PublicKey};
+use abstract_cryptography::{Array, SecretKey, PublicKey, TagError};
 use digest::{Input, FixedOutput, BlockInput, Reset};
 use generic_array::{GenericArray, ArrayLength};
 use keystream::{KeyStream, SeekableKeyStream};
 use std::ops::BitXorAssign;
-use abstract_cryptography::TagError;
 use either::Either;
-use abstract_cryptography::Array;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum OnionPacketVersion {
@@ -89,6 +87,30 @@ where
         rhs.xor_read(self.data.as_mut_slice()).unwrap();
         rhs.xor_read(self.hmac.as_mut_slice()).unwrap();
     }
+}
+
+fn calc_hmac<L, D, T>(
+    v: &[PayloadHmac<L, D::OutputSize>; MAX_HOPS_NUMBER],
+    mu: &GenericArray<u8, D::OutputSize>,
+    associated_data: T
+) -> GenericArray<u8, D::OutputSize>
+where
+    L: ArrayLength<u8>,
+    D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
+    D::BlockSize: ArrayLength<u8> + Clone,
+    D::OutputSize: ArrayLength<u8>,
+    T: AsRef<[u8]>,
+{
+    use hmac::{Mac, Hmac};
+
+    let mac = Hmac::<D>::new_varkey(&mu).unwrap();
+    let mut mac = v.iter().fold(mac, |mut mac, hop| {
+        mac.input(&hop.data);
+        mac.input(&hop.hmac);
+        mac
+    });
+    mac.input(associated_data.as_ref());
+    mac.result().code()
 }
 
 fn zero_path<L, M>() -> [PayloadHmac<L, M>; MAX_HOPS_NUMBER]
@@ -203,53 +225,36 @@ where
         let mut hmac = GenericArray::<u8, D::OutputSize>::default();
         let mut routing_info = zero_path::<L, D::OutputSize>();
 
+        let length = shared_secrets.len();
+        for i in 0..length {
+            let rho = KeyType::Rho.key::<_, D>(&shared_secrets[i]);
+            let mut s = S::seed(rho);
+            let size = PayloadHmac::<L, D::OutputSize>::size();
+            s.seek_to((size * (MAX_HOPS_NUMBER - i)) as _).unwrap();
+            let start = MAX_HOPS_NUMBER - length;
+            routing_info[start..(start + i + 1)].iter_mut().for_each(|x| *x ^= &mut s);
+        }
+
         payloads
             .into_iter()
             .enumerate()
             .rev()
             .for_each(|(index, payload)| {
-                let rho = KeyType::Rho.key::<_, D>(&shared_secrets[index]);
-                let mut stream = S::seed(rho);
-
+                // shift right and place payload at 0
                 for i in (1..MAX_HOPS_NUMBER).rev() {
-                    routing_info[i].data = routing_info[i - 1].data.clone();
-                    routing_info[i].hmac = routing_info[i - 1].hmac.clone();
+                    routing_info[i] = routing_info[i - 1].clone();
                 }
                 routing_info[0] = PayloadHmac {
                     data: payload,
                     hmac: hmac.clone(),
                 };
 
+                let rho = KeyType::Rho.key::<_, D>(&shared_secrets[index]);
+                let mut stream = S::seed(rho);
                 routing_info.iter_mut().for_each(|x| *x ^= &mut stream);
 
-                // first iteration
-                let length = shared_secrets.len();
-                if index == length - 1 {
-                    for i in (MAX_HOPS_NUMBER - length + 1)..MAX_HOPS_NUMBER {
-                        routing_info[i] = PayloadHmac::zero();
-                    }
-                    for i in 1..length {
-                        let rho = KeyType::Rho.key::<_, D>(&shared_secrets[i - 1]);
-                        let mut s = S::seed(rho);
-                        let size = PayloadHmac::<L, D::OutputSize>::size();
-                        s.seek_to((size * (MAX_HOPS_NUMBER - (i - 1))) as _)
-                            .unwrap();
-                        for j in 0..i {
-                            routing_info[j + (MAX_HOPS_NUMBER - (length - 1))] ^= &mut s;
-                        }
-                    }
-                }
-
-                use hmac::{Mac, Hmac};
                 let mu = KeyType::Mu.key::<_, D>(&shared_secrets[index]);
-                let mac = Hmac::<D>::new_varkey(&mu).unwrap();
-                let mut mac = routing_info.iter().fold(mac, |mut mac, hop| {
-                    mac.input(&hop.data);
-                    mac.input(&hop.hmac);
-                    mac
-                });
-                mac.input(associated_data.as_ref());
-                hmac = mac.result().code();
+                hmac = calc_hmac::<L, D, _>(&routing_info, &mu, &associated_data);
             });
 
         Ok(OnionPacket {
@@ -281,16 +286,8 @@ where
 
         let (version, routing_info, hmac) = (self.version, self.routing_info, self.hmac);
 
-        use hmac::{Mac, Hmac};
         let mu = KeyType::Mu.key::<_, D>(&shared_secret);
-        let mac = Hmac::<D>::new_varkey(&mu).unwrap();
-        let mut mac = routing_info.iter().fold(mac, |mut mac, hop| {
-            mac.input(&hop.data);
-            mac.input(&hop.hmac);
-            mac
-        });
-        mac.input(associated_data.as_ref());
-        let hmac_received = mac.result().code();
+        let hmac_received = calc_hmac::<L, D, _>(&routing_info, &mu, associated_data);
 
         if hmac_received != hmac {
             Err(Either::Right(TagError))
@@ -298,23 +295,25 @@ where
             let rho = KeyType::Rho.key::<_, D>(&shared_secret);
             let mut stream = S::seed(rho);
 
-            let mut routing_info_extended = routing_info.to_vec();
-            routing_info_extended.push(PayloadHmac::<L, M>::zero());
-            routing_info_extended
+            let mut routing_info = routing_info;
+            routing_info
                 .iter_mut()
                 .for_each(|x| *x ^= &mut stream);
 
             let PayloadHmac {
                 data: output,
                 hmac: hmac,
-            } = routing_info_extended.remove(0);
+            } = routing_info[0].clone();
+
+            for i in 1..MAX_HOPS_NUMBER {
+                routing_info[i - 1] = routing_info[i].clone();
+            }
+            routing_info[MAX_HOPS_NUMBER - 1] = PayloadHmac::zero();
+            routing_info[MAX_HOPS_NUMBER - 1] ^= &mut stream;
 
             if hmac == GenericArray::default() {
                 Ok(Processed::ExitNode { output: output })
             } else {
-                let mut route = zero_path();
-                route[..].clone_from_slice(routing_info_extended.as_slice());
-
                 let dh_key = public_key;
                 let blinding = D::default()
                     .chain(dh_key.serialize())
@@ -328,7 +327,7 @@ where
                     next: OnionPacket {
                         version: version,
                         ephemeral_public_key: next_dh_key,
-                        routing_info: route,
+                        routing_info: routing_info,
                         hmac: hmac,
                     },
                     output: output,

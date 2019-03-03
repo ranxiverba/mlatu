@@ -61,7 +61,7 @@ fn path() {
     use generic_array::sequence::GenericSequence;
 
     let context = Secp256k1::new();
-    let secret = SecretKey::new(&mut rand::thread_rng());
+
     let (secrets, route): (Vec<SecretKey>, Vec<(PublicKey, _)>) = (0..6)
         .map(|_| {
             let secret = SecretKey::new(&mut rand::thread_rng());
@@ -78,7 +78,7 @@ fn path() {
 
     let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(
         OnionPacketVersion::_0,
-        secret,
+        SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),
         &[],
     )
