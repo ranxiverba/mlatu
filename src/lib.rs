@@ -120,46 +120,51 @@ where
     ]
 }
 
-pub struct OnionPacketDescription<A, H, L, T>
+pub struct OnionPacket<A, L, M>
 where
     A: SecretKey,
-    H: Iterator<Item = (A::PublicKey, GenericArray<u8, L>)>,
     L: ArrayLength<u8>,
-    T: AsRef<[u8]>,
+    M: ArrayLength<u8>,
 {
     version: OnionPacketVersion,
-    session_key: A,
-    route: H,
-    associated_data: T,
+    ephemeral_public_key: A::PublicKey,
+    routing_info: [PayloadHmac<L, M>; MAX_HOPS_NUMBER],
+    hmac: GenericArray<u8, M>,
 }
 
-impl<A, H, L, T> OnionPacketDescription<A, H, L, T>
+pub enum Processed<A, L, M>
 where
-    A: SecretKey + Clone,
-    A::PublicKey: Clone,
-    H: Iterator<Item = (A::PublicKey, GenericArray<u8, L>)>,
+    A: SecretKey,
     L: ArrayLength<u8>,
-    T: AsRef<[u8]>,
+    M: ArrayLength<u8>,
 {
-    pub fn new(version: OnionPacketVersion, session_key: A, route: H, associated_data: T) -> Self {
-        OnionPacketDescription {
-            version: version,
-            session_key: session_key,
-            route: route,
-            associated_data: associated_data,
-        }
-    }
+    ExitNode {
+        output: GenericArray<u8, L>,
+    },
+    MoreHops {
+        next: OnionPacket<A, L, M>,
+        output: GenericArray<u8, L>,
+    },
+}
 
-    pub fn packet<D, S>(self) -> Result<OnionPacket<A, L, D::OutputSize>, A::Error>
+impl<A, L, M> OnionPacket<A, L, M>
+where
+    A: SecretKey + Clone + Array,
+    A::PublicKey: Clone,
+    L: ArrayLength<u8> + Clone,
+    M: ArrayLength<u8> + Clone,
+{
+    pub fn new<T, H, D, S>(version: OnionPacketVersion, session_key: A, route: H, associated_data: T) -> Result<Self, A::Error>
     where
-        D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
+        T: AsRef<[u8]>,
+        H: Iterator<Item = (A::PublicKey, GenericArray<u8, L>)>,
+        D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
         D::BlockSize: ArrayLength<u8> + Clone,
         D::OutputSize: ArrayLength<u8>,
         S: PseudoRandomStream + SeekableKeyStream,
     {
         let base_point = A::PublicKey::base_point();
         let contexts = A::contexts();
-        let session_key = self.session_key;
         let public_key = session_key.paired(&contexts.0);
 
         let initial = (
@@ -169,8 +174,8 @@ where
             public_key.clone(),
         );
 
-        let (mut p, associated_data, version) = (self.route, self.associated_data, self.version);
-        let (shared_secrets, payloads) = p
+        let mut route = route;
+        let (shared_secrets, payloads) = route
             .try_fold(
                 initial,
                 |(mut s, mut p, mut secret, public), (path_point, payload)| {
@@ -248,41 +253,7 @@ where
             hmac: hmac,
         })
     }
-}
 
-pub struct OnionPacket<A, L, M>
-where
-    A: SecretKey,
-    L: ArrayLength<u8>,
-    M: ArrayLength<u8>,
-{
-    version: OnionPacketVersion,
-    ephemeral_public_key: A::PublicKey,
-    routing_info: [PayloadHmac<L, M>; MAX_HOPS_NUMBER],
-    hmac: GenericArray<u8, M>,
-}
-
-pub enum Processed<A, L, M>
-where
-    A: SecretKey,
-    L: ArrayLength<u8>,
-    M: ArrayLength<u8>,
-{
-    ExitNode {
-        output: GenericArray<u8, L>,
-    },
-    MoreHops {
-        next: OnionPacket<A, L, M>,
-        output: GenericArray<u8, L>,
-    },
-}
-
-impl<A, L, M> OnionPacket<A, L, M>
-where
-    A: SecretKey + Array,
-    L: ArrayLength<u8> + Clone,
-    M: ArrayLength<u8> + Clone,
-{
     pub fn process<T, S, D>(
         self,
         associated_data: T,

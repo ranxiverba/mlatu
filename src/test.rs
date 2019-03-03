@@ -1,6 +1,4 @@
-use super::{
-    OnionPacketVersion, PseudoRandomStream, OnionPacketDescription, Processed,
-};
+use super::{OnionPacketVersion, PseudoRandomStream, Processed, OnionPacket};
 use generic_array::GenericArray;
 
 #[test]
@@ -40,23 +38,20 @@ fn packet() {
         .map(|(i, &d)| {
             let pk = PublicKey::from_slice(hex::decode(d).unwrap().as_slice()).unwrap();
             let x = i as u8;
-            let payload = GenericArray::<_, U33>::from_slice(&[
+            let payload = GenericArray::<_, U33>::clone_from_slice(&[
                 0, // realm
                 x, x, x, x, x, x, x, x, 0, 0, 0, 0, 0, 0, 0, x, 0, 0, 0, x, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0,
-            ])
-            .clone();
+            ]);
             (pk, payload)
-        })
-        .collect::<Vec<_>>();
+        });
 
-    let description = OnionPacketDescription::new(
+    let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(
         OnionPacketVersion::_0,
         secret_key,
-        path.into_iter(),
+        path,
         associated_data,
-    );
-    let packet = description.packet::<Sha256, ChaCha>().unwrap();
+    ).unwrap();
     assert_eq!(hex::encode(packet.hmac), reference_hmac_text);
 }
 
@@ -81,8 +76,7 @@ fn path() {
 
     let payloads = route.iter().map(|(_, payload)| payload.clone()).collect::<Vec<_>>();
 
-    let description = OnionPacketDescription::new(OnionPacketVersion::_0, secret, route.into_iter(), &[]);
-    let packet = description.packet::<Sha256, ChaCha>().unwrap();
+    let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(OnionPacketVersion::_0, secret, route.into_iter(), &[]).unwrap();
 
     let (packet, extracted_payloads) = secrets.into_iter().fold((Some(packet), Vec::new()), |(packet, mut payloads), secret| {
         match packet.unwrap().process::<_, ChaCha, Sha256>(&[], secret).unwrap() {
