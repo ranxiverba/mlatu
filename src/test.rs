@@ -32,26 +32,23 @@ fn packet() {
 
     let secret_key = SecretKey::from_slice(secret_key_text.as_bytes()).unwrap();
     let associated_data = associated_data_text.as_bytes().to_vec();
-    let path = public_keys_texts
-        .iter()
-        .enumerate()
-        .map(|(i, &d)| {
-            let pk = PublicKey::from_slice(hex::decode(d).unwrap().as_slice()).unwrap();
-            let x = i as u8;
-            let payload = GenericArray::<_, U33>::clone_from_slice(&[
-                0, // realm
-                x, x, x, x, x, x, x, x, 0, 0, 0, 0, 0, 0, 0, x, 0, 0, 0, x, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0,
-            ]);
-            (pk, payload)
-        });
+    let path = public_keys_texts.iter().enumerate().map(|(i, &d)| {
+        let pk = PublicKey::from_slice(hex::decode(d).unwrap().as_slice()).unwrap();
+        let x = i as u8;
+        let payload = GenericArray::<_, U33>::clone_from_slice(&[
+            0, x, x, x, x, x, x, x, x, 0, 0, 0, 0, 0, 0, 0, x, 0, 0, 0, x, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0,
+        ]);
+        (pk, payload)
+    });
 
     let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(
         OnionPacketVersion::_0,
         secret_key,
         path,
         associated_data,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(hex::encode(packet.hmac), reference_hmac_text);
 }
 
@@ -74,28 +71,42 @@ fn path() {
         })
         .unzip();
 
-    let payloads = route.iter().map(|(_, payload)| payload.clone()).collect::<Vec<_>>();
+    let payloads = route
+        .iter()
+        .map(|(_, payload)| payload.clone())
+        .collect::<Vec<_>>();
 
-    let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(OnionPacketVersion::_0, secret, route.into_iter(), &[]).unwrap();
+    let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(
+        OnionPacketVersion::_0,
+        secret,
+        route.into_iter(),
+        &[],
+    )
+    .unwrap();
 
-    let (packet, extracted_payloads) = secrets.into_iter().fold((Some(packet), Vec::new()), |(packet, mut payloads), secret| {
-        match packet.unwrap().process::<_, ChaCha, Sha256>(&[], secret).unwrap() {
-            Processed::MoreHops {
-                next: next,
-                output: output,
-            } => {
-                payloads.push(output);
-                (Some(next), payloads)
-            },
-            Processed::ExitNode {
-                output: output,
-            } => {
-                payloads.push(output);
-                (None, payloads)
+    let initial = (Some(packet), Vec::new());
+    let (n, output) = secrets
+        .into_iter()
+        .fold(initial, |(packet, mut payloads), secret| {
+            let processed = packet
+                .unwrap()
+                .process::<_, ChaCha, Sha256>(&[], secret)
+                .unwrap();
+            match processed {
+                Processed::MoreHops {
+                    next: next,
+                    output: output,
+                } => {
+                    payloads.push(output);
+                    (Some(next), payloads)
+                },
+                Processed::ExitNode { output: output } => {
+                    payloads.push(output);
+                    (None, payloads)
+                },
             }
-        }
-    });
+        });
 
-    assert_eq!(payloads, extracted_payloads);
-    assert_eq!(packet.is_none(), true);
+    assert_eq!(payloads, output);
+    assert_eq!(n.is_none(), true);
 }

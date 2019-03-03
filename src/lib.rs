@@ -154,7 +154,12 @@ where
     L: ArrayLength<u8> + Clone,
     M: ArrayLength<u8> + Clone,
 {
-    pub fn new<T, H, D, S>(version: OnionPacketVersion, session_key: A, route: H, associated_data: T) -> Result<Self, A::Error>
+    pub fn new<T, H, D, S>(
+        version: OnionPacketVersion,
+        session_key: A,
+        route: H,
+        associated_data: T,
+    ) -> Result<Self, A::Error>
     where
         T: AsRef<[u8]>,
         H: Iterator<Item = (A::PublicKey, GenericArray<u8, L>)>,
@@ -227,7 +232,8 @@ where
                         let rho = KeyType::Rho.key::<_, D>(&shared_secrets[i - 1]);
                         let mut s = S::seed(rho);
                         let size = PayloadHmac::<L, D::OutputSize>::size();
-                        s.seek_to((size * (MAX_HOPS_NUMBER - (i - 1))) as _).unwrap();
+                        s.seek_to((size * (MAX_HOPS_NUMBER - (i - 1))) as _)
+                            .unwrap();
                         for j in 0..i {
                             routing_info[j + (MAX_HOPS_NUMBER - (length - 1))] ^= &mut s;
                         }
