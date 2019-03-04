@@ -18,40 +18,43 @@ pub trait PseudoRandomStream {
         T: AsRef<[u8]>;
 }
 
-pub struct OnionPacket<A, L, M>
+pub struct OnionPacket<A, L, M, N>
 where
     A: SecretKey,
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
 {
     version: OnionPacketVersion,
     ephemeral_public_key: A::PublicKey,
-    routing_info: Path<L, M>,
+    routing_info: Path<L, M, N>,
     hmac: GenericArray<u8, M>,
 }
 
-pub enum Processed<A, L, M>
+pub enum Processed<A, L, M, N>
 where
     A: SecretKey + Clone + Array,
     A::PublicKey: Clone,
-    L: ArrayLength<u8> + Clone,
-    M: ArrayLength<u8> + Clone,
+    L: ArrayLength<u8>,
+    M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
 {
     ExitNode {
         output: GenericArray<u8, L>,
     },
     MoreHops {
-        next: OnionPacket<A, L, M>,
+        next: OnionPacket<A, L, M, N>,
         output: GenericArray<u8, L>,
     },
 }
 
-impl<A, L, M> OnionPacket<A, L, M>
+impl<A, L, M, N> OnionPacket<A, L, M, N>
 where
     A: SecretKey + Clone + Array,
     A::PublicKey: Clone,
-    L: ArrayLength<u8> + Clone,
-    M: ArrayLength<u8> + Clone,
+    L: ArrayLength<u8>,
+    M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
 {
     pub fn new<T, H, S, D>(
         version: OnionPacketVersion,
@@ -72,8 +75,8 @@ where
         let public_key = session_key.paired(&contexts.0);
 
         let initial = (
-            Vec::with_capacity(Path::<L, M>::MAX_LENGTH),
-            Vec::with_capacity(Path::<L, M>::MAX_LENGTH),
+            Vec::with_capacity(Path::<L, M, N>::size()),
+            Vec::with_capacity(Path::<L, M, N>::size()),
             session_key.clone(),
             public_key.clone(),
         );
@@ -100,16 +103,16 @@ where
             .map(|(s, p, _, _)| (s, p))?;
 
         let mut hmac = GenericArray::<u8, D::OutputSize>::default();
-        let mut routing_info = Path::<L, D::OutputSize>::new();
+        let mut routing_info = Path::<L, D::OutputSize, N>::new();
 
         let length = shared_secrets.len();
         for i in 0..length {
             let rho = KeyType::Rho.key::<_, D>(&shared_secrets[i]);
             let mut s = S::seed(rho);
             let size = PayloadHmac::<L, D::OutputSize>::size();
-            s.seek_to((size * (Path::<L, M>::MAX_LENGTH - i)) as _)
+            s.seek_to((size * (Path::<L, M, N>::size() - i)) as _)
                 .unwrap();
-            let start = Path::<L, M>::MAX_LENGTH - length;
+            let start = Path::<L, M, N>::size() - length;
             routing_info.as_mut()[start..(start + i + 1)]
                 .iter_mut()
                 .for_each(|x| *x ^= &mut s);
@@ -145,7 +148,7 @@ where
         self,
         associated_data: T,
         secret_key: A,
-    ) -> Result<Processed<A, L, M>, Either<A::Error, TagError>>
+    ) -> Result<Processed<A, L, M, N>, Either<A::Error, TagError>>
     where
         T: AsRef<[u8]>,
         S: PseudoRandomStream + SeekableKeyStream,
@@ -203,7 +206,7 @@ where
 
 #[cfg(feature = "serde")]
 mod serde_m {
-    use super::{OnionPacket, OnionPacketVersion, Path};
+    use super::{OnionPacket, OnionPacketVersion, Path, PayloadHmac};
 
     use abstract_cryptography::{Array, SecretKey, PublicKey};
     use generic_array::{GenericArray, ArrayLength};
@@ -211,12 +214,13 @@ mod serde_m {
     use std::marker::PhantomData;
     use std::fmt;
 
-    impl<A, L, M> Serialize for OnionPacket<A, L, M>
+    impl<A, L, M, N> Serialize for OnionPacket<A, L, M, N>
     where
         A: SecretKey + Clone + Array,
         A::PublicKey: Clone,
-        L: ArrayLength<u8> + Clone,
-        M: ArrayLength<u8> + Clone,
+        L: ArrayLength<u8>,
+        M: ArrayLength<u8>,
+        N: ArrayLength<PayloadHmac<L, M>>,
     {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -237,13 +241,14 @@ mod serde_m {
         }
     }
 
-    impl<'de, A, L, M> Deserialize<'de> for OnionPacket<A, L, M>
+    impl<'de, A, L, M, N> Deserialize<'de> for OnionPacket<A, L, M, N>
     where
         A: 'de + SecretKey + Clone + Array,
         A::PublicKey: Clone,
         A::Error: fmt::Display,
-        L: 'de + ArrayLength<u8> + Clone,
-        M: 'de + ArrayLength<u8> + Clone,
+        L: 'de + ArrayLength<u8>,
+        M: 'de + ArrayLength<u8>,
+        N: 'de + ArrayLength<PayloadHmac<L, M>>,
     {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
@@ -251,26 +256,28 @@ mod serde_m {
         {
             use serde::de::{Visitor, SeqAccess, Error};
 
-            struct V<A, L, M>
+            struct V<A, L, M, N>
             where
                 A: SecretKey + Clone + Array,
                 A::PublicKey: Clone,
                 A::Error: fmt::Display,
-                L: ArrayLength<u8> + Clone,
-                M: ArrayLength<u8> + Clone,
+                L: ArrayLength<u8>,
+                M: ArrayLength<u8>,
+                N: ArrayLength<PayloadHmac<L, M>>,
             {
-                phantom_data: PhantomData<(A, L, M)>,
+                phantom_data: PhantomData<(A, L, M, N)>,
             }
 
-            impl<'de, A, L, M> Visitor<'de> for V<A, L, M>
+            impl<'de, A, L, M, N> Visitor<'de> for V<A, L, M, N>
             where
                 A: 'de + SecretKey + Clone + Array,
                 A::PublicKey: Clone,
                 A::Error: fmt::Display,
-                L: 'de + ArrayLength<u8> + Clone,
-                M: 'de + ArrayLength<u8> + Clone,
+                L: 'de + ArrayLength<u8>,
+                M: 'de + ArrayLength<u8>,
+                N: 'de + ArrayLength<PayloadHmac<L, M>>,
             {
-                type Value = OnionPacket<A, L, M>;
+                type Value = OnionPacket<A, L, M, N>;
 
                 fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     write!(f, "bytes")
@@ -286,7 +293,7 @@ mod serde_m {
                     let k: GenericArray<u8, <A::PublicKey as PublicKey>::Length> = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
-                    let p: Path<L, M> = sequence
+                    let p: Path<L, M, N> = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
                     let m: GenericArray<u8, M> = sequence
@@ -313,7 +320,7 @@ mod serde_m {
             deserializer.deserialize_tuple(
                 4,
                 V {
-                    phantom_data: PhantomData::<(A, L, M)>,
+                    phantom_data: PhantomData::<(A, L, M, N)>,
                 },
             )
         }

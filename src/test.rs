@@ -6,7 +6,7 @@ fn packet() {
     use secp256k1::{PublicKey, SecretKey};
     use sha2::Sha256;
     use chacha::ChaCha;
-    use generic_array::typenum::U33;
+    use generic_array::typenum::{U33, U20};
 
     impl PseudoRandomStream for ChaCha {
         fn seed<T>(v: T) -> Self
@@ -94,7 +94,7 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = OnionPacket::new::<_, _, ChaCha, Sha256>(
+    let packet = OnionPacket::<_, _, _, U20>::new::<_, _, ChaCha, Sha256>(
         OnionPacketVersion::_0,
         secret_key,
         path,
@@ -119,7 +119,7 @@ fn path() {
     use secp256k1::{PublicKey, SecretKey, Secp256k1};
     use sha2::Sha256;
     use chacha::ChaCha;
-    use generic_array::typenum::U8;
+    use generic_array::typenum::{U8, U50};
     use generic_array::sequence::GenericSequence;
 
     let context = Secp256k1::new();
@@ -138,7 +138,7 @@ fn path() {
         .map(|(_, payload)| payload.clone())
         .collect::<Vec<_>>();
 
-    let packet = OnionPacket::new::<_, _, ChaCha, Sha256>(
+    let packet = OnionPacket::<_, _, _, U50>::new::<_, _, ChaCha, Sha256>(
         OnionPacketVersion::_0,
         SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),

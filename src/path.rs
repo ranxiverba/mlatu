@@ -81,13 +81,12 @@ where
     }
 }
 
-const MAX_HOPS_NUMBER: usize = 20;
-
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
-pub struct Path<L, M>
+pub struct Path<L, M, N>
 where
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
 {
     #[cfg_attr(
         feature = "serde-support",
@@ -96,40 +95,22 @@ where
             deserialize = "PayloadHmac<L, M>: Deserialize<'de>"
         ))
     )]
-    raw: [PayloadHmac<L, M>; MAX_HOPS_NUMBER],
+    raw: GenericArray<PayloadHmac<L, M>, N>,
 }
 
-impl<L, M> Path<L, M>
+impl<L, M, N> Path<L, M, N>
 where
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
 {
-    pub const MAX_LENGTH: usize = MAX_HOPS_NUMBER;
+    pub fn size() -> usize {
+        N::to_usize()
+    }
 
     pub fn new() -> Self {
         Path {
-            raw: [
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-                PayloadHmac::<L, M>::default(),
-            ],
+            raw: GenericArray::<PayloadHmac<L, M>, N>::default(),
         }
     }
 
@@ -157,7 +138,7 @@ where
     }
 
     pub fn push(&mut self, item: PayloadHmac<L, M>) {
-        for i in (1..MAX_HOPS_NUMBER).rev() {
+        for i in (1..Self::size()).rev() {
             self.raw[i] = self.raw[i - 1].clone();
         }
         self.raw[0] = item;
@@ -166,38 +147,41 @@ where
     pub fn pop(&mut self) -> PayloadHmac<L, M> {
         let item = self.raw[0].clone();
 
-        for i in 1..MAX_HOPS_NUMBER {
+        for i in 1..Self::size() {
             self.raw[i - 1] = self.raw[i].clone();
         }
-        self.raw[MAX_HOPS_NUMBER - 1] = PayloadHmac::default();
+        self.raw[Self::size() - 1] = PayloadHmac::default();
         item
     }
 }
 
-impl<L, M> AsRef<[PayloadHmac<L, M>]> for Path<L, M>
+impl<L, M, N> AsRef<[PayloadHmac<L, M>]> for Path<L, M, N>
 where
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
 {
     fn as_ref(&self) -> &[PayloadHmac<L, M>] {
         self.raw.as_ref()
     }
 }
 
-impl<L, M> AsMut<[PayloadHmac<L, M>]> for Path<L, M>
+impl<L, M, N> AsMut<[PayloadHmac<L, M>]> for Path<L, M, N>
 where
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
 {
     fn as_mut(&mut self) -> &mut [PayloadHmac<L, M>] {
         self.raw.as_mut()
     }
 }
 
-impl<'a, L, M, I> BitXorAssign<&'a mut I> for Path<L, M>
+impl<'a, L, M, N, I> BitXorAssign<&'a mut I> for Path<L, M, N>
 where
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, M>>,
     I: KeyStream,
 {
     fn bitxor_assign(&mut self, rhs: &'a mut I) {
