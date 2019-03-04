@@ -47,7 +47,6 @@ pub trait PseudoRandomStream {
         T: AsRef<[u8]>;
 }
 
-#[derive(Default)]
 struct PayloadHmac<L, M>
 where
     L: ArrayLength<u8>,
@@ -70,18 +69,24 @@ where
     }
 }
 
-impl<L, M> PayloadHmac<L, M>
+impl<L, M> Default for PayloadHmac<L, M>
 where
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
 {
-    fn zero() -> Self {
+    fn default() -> Self {
         PayloadHmac {
             data: Default::default(),
             hmac: Default::default(),
         }
     }
+}
 
+impl<L, M> PayloadHmac<L, M>
+where
+    L: ArrayLength<u8>,
+    M: ArrayLength<u8>,
+{
     fn size() -> usize {
         L::to_usize() + M::to_usize()
     }
@@ -117,26 +122,26 @@ where
     pub fn new() -> Self {
         Path {
             raw: [
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
-                PayloadHmac::<L, M>::zero(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
+                PayloadHmac::<L, M>::default(),
             ],
         }
     }
@@ -177,7 +182,7 @@ where
         for i in 1..MAX_HOPS_NUMBER {
             self.raw[i - 1] = self.raw[i].clone();
         }
-        self.raw[MAX_HOPS_NUMBER - 1] = PayloadHmac::zero();
+        self.raw[MAX_HOPS_NUMBER - 1] = PayloadHmac::default();
         item
     }
 }
