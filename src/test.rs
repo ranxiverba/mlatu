@@ -42,7 +42,7 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(
+    let packet = OnionPacket::new::<_, _, ChaCha, Sha256>(
         OnionPacketVersion::_0,
         secret_key,
         path,
@@ -53,6 +53,7 @@ fn packet() {
 }
 
 #[test]
+#[allow(non_shorthand_field_patterns)]
 fn path() {
     use secp256k1::{PublicKey, SecretKey, Secp256k1};
     use sha2::Sha256;
@@ -76,7 +77,7 @@ fn path() {
         .map(|(_, payload)| payload.clone())
         .collect::<Vec<_>>();
 
-    let packet = OnionPacket::new::<_, _, Sha256, ChaCha>(
+    let packet = OnionPacket::new::<_, _, ChaCha, Sha256>(
         OnionPacketVersion::_0,
         SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),
