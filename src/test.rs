@@ -1,4 +1,4 @@
-use super::{OnionPacketVersion, PseudoRandomStream, Processed, OnionPacket};
+use super::{OnionPacketVersion, PseudoRandomStream, OnionPacket};
 use generic_array::GenericArray;
 
 #[test]
@@ -146,29 +146,16 @@ fn path() {
     )
     .unwrap();
 
-    let initial = (Some(packet), Vec::new());
-    let (n, output) = secrets
+    let initial = (packet, Vec::new());
+    let (_next, output) = secrets
         .into_iter()
         .fold(initial, |(packet, mut payloads), secret| {
-            let processed = packet
-                .unwrap()
+            let (next, output) = packet
                 .process::<_, ChaCha, Sha256>(&[], secret)
                 .unwrap();
-            match processed {
-                Processed::MoreHops {
-                    next: next,
-                    output: output,
-                } => {
-                    payloads.push(output);
-                    (Some(next), payloads)
-                },
-                Processed::ExitNode { output: output } => {
-                    payloads.push(output);
-                    (None, payloads)
-                },
-            }
+            payloads.push(output.data);
+            (next, payloads)
         });
 
     assert_eq!(payloads, output);
-    assert_eq!(n.is_none(), true);
 }

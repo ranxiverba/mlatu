@@ -31,23 +31,6 @@ where
     hmac: GenericArray<u8, M>,
 }
 
-pub enum Processed<A, L, M, N>
-where
-    A: SecretKey + Clone + Array,
-    A::PublicKey: Clone,
-    L: ArrayLength<u8>,
-    M: ArrayLength<u8>,
-    N: ArrayLength<PayloadHmac<L, M>>,
-{
-    ExitNode {
-        output: GenericArray<u8, L>,
-    },
-    MoreHops {
-        next: OnionPacket<A, L, M, N>,
-        output: GenericArray<u8, L>,
-    },
-}
-
 impl<A, L, M, N> OnionPacket<A, L, M, N>
 where
     A: SecretKey + Clone + Array,
@@ -148,7 +131,7 @@ where
         self,
         associated_data: T,
         secret_key: A,
-    ) -> Result<Processed<A, L, M, N>, Either<A::Error, TagError>>
+    ) -> Result<(Self, PayloadHmac<L, M>), Either<A::Error, TagError>>
     where
         T: AsRef<[u8]>,
         S: PseudoRandomStream + SeekableKeyStream,
@@ -178,29 +161,28 @@ where
             item ^= &mut stream;
             routing_info ^= &mut stream;
 
-            if item.hmac == GenericArray::default() {
-                Ok(Processed::ExitNode { output: item.data })
-            } else {
-                let dh_key = public_key;
-                let blinding = D::default()
-                    .chain(dh_key.serialize())
-                    .chain(shared_secret)
-                    .fixed_result();
-                let next_dh_key = A::copy(blinding)
-                    .dh(&contexts.1, &dh_key)
-                    .map_err(Either::Left)?;
+            let dh_key = public_key;
+            let blinding = D::default()
+                .chain(dh_key.serialize())
+                .chain(shared_secret)
+                .fixed_result();
+            let next_dh_key = A::copy(blinding)
+                .dh(&contexts.1, &dh_key)
+                .map_err(Either::Left)?;
 
-                Ok(Processed::MoreHops {
-                    next: OnionPacket {
-                        version: version,
-                        ephemeral_public_key: next_dh_key,
-                        routing_info: routing_info,
-                        hmac: item.hmac,
-                    },
-                    output: item.data,
-                })
-            }
+            let next = OnionPacket {
+                version: version,
+                ephemeral_public_key: next_dh_key,
+                routing_info: routing_info,
+                hmac: item.hmac.clone(),
+            };
+
+            Ok((next, item))
         }
+    }
+
+    pub fn hmac(&self) -> GenericArray<u8, M> {
+        self.hmac.clone()
     }
 }
 

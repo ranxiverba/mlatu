@@ -7,4 +7,5 @@ mod key;
 mod path;
 mod packet;
 
-pub use self::packet::{OnionPacketVersion, PseudoRandomStream, Processed, OnionPacket};
+pub use self::packet::{OnionPacketVersion, PseudoRandomStream, OnionPacket};
+pub use self::path::PayloadHmac;
