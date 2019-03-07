@@ -6,7 +6,7 @@ fn packet() {
     use secp256k1::{PublicKey, SecretKey};
     use sha2::Sha256;
     use chacha::ChaCha;
-    use generic_array::typenum::{U33, U20};
+    use generic_array::typenum::{U32, U33, U20};
 
     impl PseudoRandomStream for ChaCha {
         fn seed<T>(v: T) -> Self
@@ -96,6 +96,7 @@ fn packet() {
 
     let packet = OnionPacket::<_, ChaCha, Sha256, _, _, U20>::new(
         associated_data,
+        GenericArray::<u8, U32>::default(),
         secret_key,
         path,
     )
@@ -120,6 +121,7 @@ fn path() {
     use chacha::ChaCha;
     use generic_array::typenum::{U8, U50};
     use generic_array::sequence::GenericSequence;
+    use hmac::{Hmac, Mac};
 
     let context = Secp256k1::new();
 
@@ -134,11 +136,15 @@ fn path() {
 
     let payloads = route
         .iter()
-        .map(|(_, payload)| payload.clone())
+        .map(|(_, payload)| { dbg!(hex::encode(&payload)); payload.clone() })
         .collect::<Vec<_>>();
+
+    let mut hmac = Hmac::<Sha256>::new_varkey(b"ssqq").unwrap();
+    hmac.input(b"test test data");
 
     let packet = OnionPacket::<_, ChaCha, Sha256, _, _, U50>::new(
         &[],
+        hmac.result().code(),
         SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),
     )
@@ -151,6 +157,7 @@ fn path() {
             let (next, output) = packet
                 .process(&[], secret)
                 .unwrap();
+            dbg!(hex::encode(&output.data));
             payloads.push(output.data);
             (next, payloads)
         });

@@ -45,6 +45,7 @@ where
 {
     pub fn new<T, H>(
         associated_data: T,
+        initial_hmac: GenericArray<u8, M>,
         session_key: A,
         route: H,
     ) -> Result<Self, A::Error>
@@ -84,7 +85,7 @@ where
             )
             .map(|(s, p, _, _)| (s, p))?;
 
-        let mut hmac = GenericArray::<u8, D::OutputSize>::default();
+        let mut hmac = initial_hmac;
         let mut routing_info = Path::<L, D::OutputSize, N>::new();
 
         let length = shared_secrets.len();
