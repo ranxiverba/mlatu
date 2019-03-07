@@ -1,4 +1,4 @@
-use super::{OnionPacketVersion, PseudoRandomStream, OnionPacket};
+use super::{PseudoRandomStream, OnionPacket};
 use generic_array::GenericArray;
 
 #[test]
@@ -19,7 +19,7 @@ fn packet() {
         }
     }
 
-    let reference_packet = "0002eec7245d6b7d2ccb30380bfbe2a3648cd7\
+    let reference_packet = "02eec7245d6b7d2ccb30380bfbe2a3648cd7\
                             a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e4\
                             6d421e9615471ab9e0bc887beff8c95fdb878f7b3a71da571226\
                             458c510bbadd1276f045c21c520a07d35da256ef75b436796243\
@@ -94,11 +94,10 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = OnionPacket::<_, _, _, U20>::new::<_, _, ChaCha, Sha256>(
-        OnionPacketVersion::_0,
+    let packet = OnionPacket::<_, ChaCha, Sha256, _, _, U20>::new(
+        associated_data,
         secret_key,
         path,
-        associated_data,
     )
     .unwrap();
 
@@ -138,11 +137,10 @@ fn path() {
         .map(|(_, payload)| payload.clone())
         .collect::<Vec<_>>();
 
-    let packet = OnionPacket::<_, _, _, U50>::new::<_, _, ChaCha, Sha256>(
-        OnionPacketVersion::_0,
+    let packet = OnionPacket::<_, ChaCha, Sha256, _, _, U50>::new(
+        &[],
         SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),
-        &[],
     )
     .unwrap();
 
@@ -151,7 +149,7 @@ fn path() {
         .into_iter()
         .fold(initial, |(packet, mut payloads), secret| {
             let (next, output) = packet
-                .process::<_, ChaCha, Sha256>(&[], secret)
+                .process(&[], secret)
                 .unwrap();
             payloads.push(output.data);
             (next, payloads)
