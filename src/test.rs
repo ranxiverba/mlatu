@@ -1,23 +1,26 @@
 use super::{PseudoRandomStream, OnionPacket};
 use generic_array::GenericArray;
+use hmac::Hmac;
+use secp256k1::{PublicKey, SecretKey};
+use sha2::Sha256;
+use chacha::ChaCha;
+
+type ThisPacket<L, M, N> = OnionPacket<SecretKey, ChaCha, Hmac<Sha256>, Sha256, L, M, N>;
+
+impl PseudoRandomStream for ChaCha {
+    fn seed<T>(v: T) -> Self
+    where
+        T: AsRef<[u8]>,
+    {
+        let mut array = [0; 32];
+        array.copy_from_slice(v.as_ref());
+        ChaCha::new_chacha20(&array, &[0u8; 8])
+    }
+}
 
 #[test]
 fn packet() {
-    use secp256k1::{PublicKey, SecretKey};
-    use sha2::Sha256;
-    use chacha::ChaCha;
     use generic_array::typenum::{U32, U33, U20};
-
-    impl PseudoRandomStream for ChaCha {
-        fn seed<T>(v: T) -> Self
-        where
-            T: AsRef<[u8]>,
-        {
-            let mut array = [0; 32];
-            array.copy_from_slice(v.as_ref());
-            ChaCha::new_chacha20(&array, &[0u8; 8])
-        }
-    }
 
     let reference_packet = "02eec7245d6b7d2ccb30380bfbe2a3648cd7\
                             a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e4\
@@ -94,7 +97,7 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = OnionPacket::<_, ChaCha, Sha256, _, _, U20>::new(
+    let packet = ThisPacket::<_, _, U20>::new(
         associated_data,
         GenericArray::<u8, U32>::default(),
         secret_key,
@@ -116,12 +119,10 @@ fn packet() {
 #[test]
 #[allow(non_shorthand_field_patterns)]
 fn path() {
-    use secp256k1::{PublicKey, SecretKey, Secp256k1};
-    use sha2::Sha256;
-    use chacha::ChaCha;
     use generic_array::typenum::{U8, U50};
     use generic_array::sequence::GenericSequence;
-    use hmac::{Hmac, Mac};
+    use hmac::Mac;
+    use secp256k1::Secp256k1;
 
     let context = Secp256k1::new();
 
@@ -142,7 +143,7 @@ fn path() {
     let mut hmac = Hmac::<Sha256>::new_varkey(b"ssqq").unwrap();
     hmac.input(b"test test data");
 
-    let packet = OnionPacket::<_, ChaCha, Sha256, _, _, U50>::new(
+    let packet = ThisPacket::<_, _, U50>::new(
         &[],
         hmac.result().code(),
         SecretKey::new(&mut rand::thread_rng()),

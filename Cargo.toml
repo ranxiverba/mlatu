@@ -11,7 +11,7 @@ features = ["std", "secp256k1"]
 [dependencies.digest]
 version = "0.8"
 
-[dependencies.hmac]
+[dependencies.crypto-mac]
 version = "0.7"
 
 [dependencies.keystream]
@@ -30,6 +30,9 @@ version = "0.4"
 [dev-dependencies.secp256k1]
 version = "0.12"
 features = ["rand"]
+
+[dev-dependencies.hmac]
+version = "0.7"
 
 [dev-dependencies.sha2]
 version = "0.8"

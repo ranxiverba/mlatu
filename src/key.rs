@@ -1,5 +1,5 @@
-use generic_array::{GenericArray, ArrayLength};
-use digest::{Input, FixedOutput, BlockInput, Reset};
+use generic_array::GenericArray;
+use crypto_mac::Mac;
 
 pub enum KeyType {
     Rho,
@@ -7,21 +7,17 @@ pub enum KeyType {
 }
 
 impl KeyType {
-    pub fn key<T, D>(&self, input: T) -> GenericArray<u8, D::OutputSize>
+    pub fn key<T, C>(&self, input: T) -> GenericArray<u8, C::OutputSize>
     where
         T: AsRef<[u8]>,
-        D: Input + FixedOutput + BlockInput + Reset + Clone + Default,
-        D::BlockSize: ArrayLength<u8> + Clone,
-        D::OutputSize: ArrayLength<u8>,
+        C: Mac,
     {
-        use hmac::{Mac, Hmac};
-
         let key_type = match self {
             &KeyType::Rho => "rho",
             &KeyType::Mu => "mu",
         };
 
-        let mut mac = Hmac::<D>::new_varkey(key_type.as_bytes()).unwrap();
+        let mut mac = C::new_varkey(key_type.as_bytes()).unwrap();
         mac.input(input.as_ref());
         mac.result().code()
     }

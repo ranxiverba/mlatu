@@ -3,7 +3,8 @@ use super::path::{PayloadHmac, Path};
 
 use generic_array::{GenericArray, ArrayLength};
 use abstract_cryptography::{Array, SecretKey, PublicKey, TagError};
-use digest::{Input, FixedOutput, BlockInput, Reset};
+use crypto_mac::Mac;
+use digest::{Input, FixedOutput};
 use keystream::SeekableKeyStream;
 use either::Either;
 use std::marker::PhantomData;
@@ -14,13 +15,12 @@ pub trait PseudoRandomStream {
         T: AsRef<[u8]>;
 }
 
-pub struct OnionPacket<A, S, D, L, M, N>
+pub struct OnionPacket<A, S, C, D, L, M, N>
 where
     A: SecretKey,
     S: PseudoRandomStream + SeekableKeyStream,
-    D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8>,
+    C: Mac<OutputSize = M>,
+    D: Default + Input + FixedOutput<OutputSize = M>,
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, M>>,
@@ -28,17 +28,16 @@ where
     ephemeral_public_key: A::PublicKey,
     routing_info: Path<L, M, N>,
     hmac: GenericArray<u8, M>,
-    phantom_data: PhantomData<(S, D)>,
+    phantom_data: PhantomData<(S, C, D)>,
 }
 
-impl<A, S, D, L, M, N> OnionPacket<A, S, D, L, M, N>
+impl<A, S, C, D, L, M, N> OnionPacket<A, S, C, D, L, M, N>
 where
     A: SecretKey + Array,
     A::PublicKey: Clone,
     S: PseudoRandomStream + SeekableKeyStream,
-    D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
-    D::BlockSize: ArrayLength<u8> + Clone,
-    D::OutputSize: ArrayLength<u8>,
+    C: Mac<OutputSize = M>,
+    D: Default + Input + FixedOutput<OutputSize = M>,
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, M>>,
@@ -90,9 +89,9 @@ where
 
         let length = shared_secrets.len();
         for i in 0..length {
-            let rho = KeyType::Rho.key::<_, D>(&shared_secrets[i]);
+            let rho = KeyType::Rho.key::<_, C>(&shared_secrets[i]);
             let mut s = S::seed(rho);
-            let size = PayloadHmac::<L, D::OutputSize>::size();
+            let size = PayloadHmac::<L, M>::size();
             s.seek_to((size * (Path::<L, M, N>::size() - i)) as _)
                 .unwrap();
             let start = Path::<L, M, N>::size() - length;
@@ -111,12 +110,12 @@ where
                     hmac: hmac.clone(),
                 });
 
-                let rho = KeyType::Rho.key::<_, D>(&shared_secrets[index]);
+                let rho = KeyType::Rho.key::<_, C>(&shared_secrets[index]);
                 let mut stream = S::seed(rho);
                 routing_info ^= &mut stream;
 
-                let mu = KeyType::Mu.key::<_, D>(&shared_secrets[index]);
-                hmac = routing_info.calc_hmac::<D, _>(&mu, &associated_data);
+                let mu = KeyType::Mu.key::<_, C>(&shared_secrets[index]);
+                hmac = routing_info.calc_hmac::<C, _>(&mu, &associated_data);
             });
 
         Ok(OnionPacket {
@@ -137,35 +136,37 @@ where
     {
         let contexts = A::contexts();
 
-        let public_key = self.ephemeral_public_key;
-        let temp = secret_key
-            .dh(&contexts.1, &public_key)
-            .map_err(Either::Left)?;
-        let shared_secret = D::default().chain(temp.serialize()).fixed_result();
+        let (shared_secret, next_dh_key) = {
+            let public_key = self.ephemeral_public_key;
+            let temp = secret_key
+                .dh(&contexts.1, &public_key)
+                .map_err(Either::Left)?;
+            let shared_secret = D::default().chain(temp.serialize()).fixed_result();
+            let dh_key = public_key;
+            let blinding = D::default()
+                .chain(dh_key.serialize())
+                .chain(&shared_secret)
+                .fixed_result();
+            let next_dh_key = A::copy(blinding)
+                .dh(&contexts.1, &dh_key)
+                .map_err(Either::Left)?;
+            (shared_secret, next_dh_key)
+        };
 
         let (mut routing_info, hmac) = (self.routing_info, self.hmac);
 
-        let mu = KeyType::Mu.key::<_, D>(&shared_secret);
-        let hmac_received = routing_info.calc_hmac::<D, _>(&mu, associated_data);
+        let mu = KeyType::Mu.key::<_, C>(&shared_secret);
+        let hmac_received = routing_info.calc_hmac::<C, _>(&mu, associated_data);
 
         if hmac_received != hmac {
             Err(Either::Right(TagError))
         } else {
-            let rho = KeyType::Rho.key::<_, D>(&shared_secret);
+            let rho = KeyType::Rho.key::<_, C>(&shared_secret);
             let mut stream = S::seed(rho);
 
             let mut item = routing_info.pop();
             item ^= &mut stream;
             routing_info ^= &mut stream;
-
-            let dh_key = public_key;
-            let blinding = D::default()
-                .chain(dh_key.serialize())
-                .chain(shared_secret)
-                .fixed_result();
-            let next_dh_key = A::copy(blinding)
-                .dh(&contexts.1, &dh_key)
-                .map_err(Either::Left)?;
 
             let next = OnionPacket {
                 ephemeral_public_key: next_dh_key,
@@ -189,20 +190,20 @@ mod serde_m {
 
     use generic_array::{GenericArray, ArrayLength};
     use abstract_cryptography::{Array, SecretKey, PublicKey};
-    use digest::{Input, FixedOutput, BlockInput, Reset};
+    use crypto_mac::Mac;
+    use digest::{Input, FixedOutput};
     use keystream::SeekableKeyStream;
     use serde::{Serialize, Serializer, Deserialize, Deserializer};
     use std::marker::PhantomData;
     use std::fmt;
 
-    impl<A, S, D, L, M, N> Serialize for OnionPacket<A, S, D, L, M, N>
+    impl<A, S, C, D, L, M, N> Serialize for OnionPacket<A, S, C, D, L, M, N>
     where
         A: SecretKey + Array,
         A::PublicKey: Clone,
         S: PseudoRandomStream + SeekableKeyStream,
-        D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
-        D::BlockSize: ArrayLength<u8> + Clone,
-        D::OutputSize: ArrayLength<u8>,
+        C: Mac<OutputSize = M>,
+        D: Default + Input + FixedOutput<OutputSize = M>,
         L: ArrayLength<u8>,
         M: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, M>>,
@@ -221,15 +222,14 @@ mod serde_m {
         }
     }
 
-    impl<'de, A, S, D, L, M, N> Deserialize<'de> for OnionPacket<A, S, D, L, M, N>
+    impl<'de, A, S, C, D, L, M, N> Deserialize<'de> for OnionPacket<A, S, C, D, L, M, N>
     where
         A: SecretKey + Array,
         A::PublicKey: Clone,
         A::Error: fmt::Display,
         S: PseudoRandomStream + SeekableKeyStream,
-        D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
-        D::BlockSize: ArrayLength<u8> + Clone,
-        D::OutputSize: ArrayLength<u8>,
+        C: Mac<OutputSize = M>,
+        D: Default + Input + FixedOutput<OutputSize = M>,
         L: ArrayLength<u8>,
         M: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, M>>,
@@ -240,36 +240,34 @@ mod serde_m {
         {
             use serde::de::{Visitor, SeqAccess, Error};
 
-            struct V<A, S, D, L, M, N>
+            struct V<A, S, C, D, L, M, N>
             where
                 A: SecretKey + Array,
                 A::PublicKey: Clone,
                 A::Error: fmt::Display,
                 S: PseudoRandomStream + SeekableKeyStream,
-                D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
-                D::BlockSize: ArrayLength<u8> + Clone,
-                D::OutputSize: ArrayLength<u8>,
+                C: Mac<OutputSize = M>,
+                D: Default + Input + FixedOutput<OutputSize = M>,
                 L: ArrayLength<u8>,
                 M: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, M>>,
             {
-                phantom_data: PhantomData<(A, S, D, L, M, N)>,
+                phantom_data: PhantomData<(A, S, C, D, L, M, N)>,
             }
 
-            impl<'de, A, S, D, L, M, N> Visitor<'de> for V<A, S, D, L, M, N>
+            impl<'de, A, S, C, D, L, M, N> Visitor<'de> for V<A, S, C, D, L, M, N>
             where
                 A: SecretKey + Array,
                 A::PublicKey: Clone,
                 A::Error: fmt::Display,
                 S: PseudoRandomStream + SeekableKeyStream,
-                D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
-                D::BlockSize: ArrayLength<u8> + Clone,
-                D::OutputSize: ArrayLength<u8>,
+                C: Mac<OutputSize = M>,
+                D: Default + Input + FixedOutput<OutputSize = M>,
                 L: ArrayLength<u8>,
                 M: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, M>>,
             {
-                type Value = OnionPacket<A, S, D, L, M, N>;
+                type Value = OnionPacket<A, S, C, D, L, M, N>;
 
                 fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     write!(f, "bytes")
@@ -304,7 +302,7 @@ mod serde_m {
             deserializer.deserialize_tuple(
                 3,
                 V {
-                    phantom_data: PhantomData::<(A, S, D, L, M, N)>,
+                    phantom_data: PhantomData::<(A, S, C, D, L, M, N)>,
                 },
             )
         }

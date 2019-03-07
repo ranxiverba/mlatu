@@ -1,7 +1,7 @@
 use generic_array::{GenericArray, ArrayLength};
 use std::ops::BitXorAssign;
 use keystream::KeyStream;
-use digest::{Input, FixedOutput, BlockInput, Reset};
+use crypto_mac::Mac;
 
 #[cfg(feature = "serde-support")]
 use serde_derive::{Serialize, Deserialize};
@@ -114,20 +114,16 @@ where
         }
     }
 
-    pub fn calc_hmac<D, T>(
+    pub fn calc_hmac<C, T>(
         &self,
         mu: &GenericArray<u8, M>,
         associated_data: T,
     ) -> GenericArray<u8, M>
     where
-        D: Input + FixedOutput<OutputSize = M> + BlockInput + Reset + Clone + Default,
-        D::BlockSize: ArrayLength<u8> + Clone,
-        D::OutputSize: ArrayLength<u8>,
+        C: Mac<OutputSize = M>,
         T: AsRef<[u8]>,
     {
-        use hmac::{Mac, Hmac};
-
-        let mac = Hmac::<D>::new_varkey(&mu).unwrap();
+        let mac = C::new_varkey(&mu).unwrap();
         let mut mac = self.as_ref().iter().fold(mac, |mut mac, hop| {
             mac.input(&hop.data);
             mac.input(&hop.hmac);
