@@ -9,4 +9,4 @@ mod packet;
 
 pub use self::path::PayloadHmac;
 pub use self::sphinx::PseudoRandomStream;
-pub use self::packet::OnionPacket;
+pub use self::packet::{OnionPacket, Processed, ProcessingError};

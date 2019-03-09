@@ -35,30 +35,50 @@ where
 {
 }
 
-pub struct OnionPacket<B, L, N>
+pub enum Processed<B, L, N, P>
 where
     B: Sphinx,
     L: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+    P: ArrayLength<u8>,
 {
-    ephemeral_public_key: <B::AsymmetricKey as SecretKey>::PublicKey,
-    routing_info: Path<L, B::MacLength, N>,
-    hmac: GenericArray<u8, B::MacLength>,
+    Forward {
+        data: GenericArray<u8, L>,
+        next: OnionPacket<B, L, N, P>,
+    },
+    Exit {
+        data: GenericArray<u8, L>,
+        message: GenericArray<u8, P>,
+    },
 }
 
-impl<B, L, N> OnionPacket<B, L, N>
+pub struct OnionPacket<B, L, N, P>
+where
+    B: Sphinx,
+    L: ArrayLength<u8>,
+    N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+    P: ArrayLength<u8>,
+{
+    public_key: <B::AsymmetricKey as SecretKey>::PublicKey,
+    routing_info: Path<L, B::MacLength, N>,
+    hmac: GenericArray<u8, B::MacLength>,
+    message: GenericArray<u8, P>,
+}
+
+impl<B, L, N, P> OnionPacket<B, L, N, P>
 where
     B: Sphinx,
     <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
     B::AsymmetricKey: Array,
     L: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+    P: ArrayLength<u8>,
 {
     pub fn new<T, H>(
         associated_data: T,
-        initial_hmac: GenericArray<u8, B::MacLength>,
         session_key: B::AsymmetricKey,
         route: H,
+        message: GenericArray<u8, P>,
     ) -> Result<Self, <B::AsymmetricKey as SecretKey>::Error>
     where
         T: AsRef<[u8]>,
@@ -69,6 +89,8 @@ where
             ),
         >,
     {
+        use keystream::KeyStream;
+
         let contexts = <B::AsymmetricKey as SecretKey>::contexts();
         let public_key = session_key.paired(&contexts.0);
 
@@ -97,8 +119,9 @@ where
             )
             .map(|(s, p, _, _)| (s, p))?;
 
-        let mut hmac = initial_hmac;
+        let mut hmac = GenericArray::default();
         let mut routing_info = Path::<L, B::MacLength, N>::new();
+        let mut message = message;
 
         let length = shared_secrets.len();
         for i in 0..length {
@@ -125,6 +148,9 @@ where
                 let mut stream = B::rho(&shared_secrets[index]);
                 routing_info ^= &mut stream;
 
+                let mut stream = B::pi(&shared_secrets[index]);
+                stream.xor_read(message.as_mut()).unwrap();
+
                 let mu = B::mu(&shared_secrets[index]);
                 let mu = routing_info
                     .as_ref()
@@ -135,9 +161,10 @@ where
             });
 
         Ok(OnionPacket {
-            ephemeral_public_key: public_key,
+            public_key: public_key,
             routing_info: routing_info,
             hmac: hmac,
+            message: message,
         })
     }
 
@@ -145,14 +172,16 @@ where
         self,
         associated_data: T,
         secret_key: B::AsymmetricKey,
-    ) -> Result<(Self, PayloadHmac<L, B::MacLength>), ProcessingError<B::AsymmetricKey>>
+    ) -> Result<Processed<B, L, N, P>, ProcessingError<B::AsymmetricKey>>
     where
         T: AsRef<[u8]>,
     {
+        use keystream::KeyStream;
+
         let contexts = <B::AsymmetricKey as SecretKey>::contexts();
 
         let (shared_secret, next_dh_key) = {
-            let public_key = self.ephemeral_public_key;
+            let public_key = self.public_key;
             let temp = secret_key
                 .dh(&contexts.1, &public_key)
                 .map_err(ProcessingError::Asymmetric)?;
@@ -164,7 +193,7 @@ where
             (shared_secret, next_dh_key)
         };
 
-        let (mut routing_info, hmac_received) = (self.routing_info, self.hmac);
+        let (mut routing_info, hmac_received, mut message) = (self.routing_info, self.hmac, self.message);
 
         let mu = B::mu(&shared_secret);
         let mu = routing_info
@@ -178,23 +207,37 @@ where
             Err(ProcessingError::Mac)
         } else {
             let mut stream = B::rho(&shared_secret);
-
             let mut item = routing_info.pop();
             item ^= &mut stream;
             routing_info ^= &mut stream;
 
-            let next = OnionPacket {
-                ephemeral_public_key: next_dh_key,
-                routing_info: routing_info,
-                hmac: item.hmac.clone(),
-            };
+            let mut stream = B::pi(&shared_secret);
+            stream.xor_read(message.as_mut()).unwrap();
 
-            Ok((next, item))
+            let PayloadHmac {
+                data: item_data,
+                hmac: item_hmac,
+            } = item;
+
+            if item_hmac == GenericArray::default() {
+                Ok(Processed::Exit {
+                    data: item_data,
+                    message: message,
+                })
+            } else {
+                let next = OnionPacket {
+                    public_key: next_dh_key,
+                    routing_info: routing_info,
+                    hmac: item_hmac,
+                    message: message,
+                };
+
+                Ok(Processed::Forward {
+                    data: item_data,
+                    next: next,
+                })
+            }
         }
-    }
-
-    pub fn hmac(&self) -> GenericArray<u8, B::MacLength> {
-        self.hmac.clone()
     }
 }
 
@@ -208,13 +251,14 @@ mod serde_m {
     use std::marker::PhantomData;
     use std::fmt;
 
-    impl<B, L, N> Serialize for OnionPacket<B, L, N>
+    impl<B, L, N, P> Serialize for OnionPacket<B, L, N, P>
     where
         B: Sphinx,
         <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
         B::AsymmetricKey: Array,
         L: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+        P: ArrayLength<u8>,
     {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -222,15 +266,16 @@ mod serde_m {
         {
             use serde::ser::SerializeTuple;
 
-            let mut tuple = serializer.serialize_tuple(3)?;
-            tuple.serialize_element(&self.ephemeral_public_key.serialize())?;
+            let mut tuple = serializer.serialize_tuple(4)?;
+            tuple.serialize_element(&self.public_key.serialize())?;
             tuple.serialize_element(&self.routing_info)?;
             tuple.serialize_element(&self.hmac)?;
+            tuple.serialize_element(&self.message)?;
             tuple.end()
         }
     }
 
-    impl<'de, B, L, N> Deserialize<'de> for OnionPacket<B, L, N>
+    impl<'de, B, L, N, P> Deserialize<'de> for OnionPacket<B, L, N, P>
     where
         B: Sphinx,
         <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
@@ -238,6 +283,7 @@ mod serde_m {
         B::AsymmetricKey: Array,
         L: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+        P: ArrayLength<u8>,
     {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
@@ -245,7 +291,7 @@ mod serde_m {
         {
             use serde::de::{Visitor, SeqAccess, Error};
 
-            struct V<B, L, N>
+            struct V<B, L, N, P>
             where
                 B: Sphinx,
                 <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
@@ -253,11 +299,12 @@ mod serde_m {
                 B::AsymmetricKey: Array,
                 L: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+                P: ArrayLength<u8>,
             {
-                phantom_data: PhantomData<(B, L, N)>,
+                phantom_data: PhantomData<(B, L, N, P)>,
             }
 
-            impl<'de, B, L, N> Visitor<'de> for V<B, L, N>
+            impl<'de, B, L, N, P> Visitor<'de> for V<B, L, N, P>
             where
                 B: Sphinx,
                 <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
@@ -265,8 +312,9 @@ mod serde_m {
                 B::AsymmetricKey: Array,
                 L: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+                P: ArrayLength<u8>,
             {
-                type Value = OnionPacket<B, L, N>;
+                type Value = OnionPacket<B, L, N, P>;
 
                 fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     write!(f, "bytes")
@@ -288,22 +336,26 @@ mod serde_m {
                     let m: GenericArray<u8, B::MacLength> = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
+                    let ms: GenericArray<u8, P> = sequence
+                        .next_element()?
+                        .ok_or(Error::custom("not enough data"))?;
 
                     let public_key =
                         PublicKey::from_raw(k).map_err(|e| Error::custom(format!("{}", e)))?;
 
                     Ok(OnionPacket {
-                        ephemeral_public_key: public_key,
+                        public_key: public_key,
                         routing_info: p,
                         hmac: m,
+                        message: ms,
                     })
                 }
             }
 
             deserializer.deserialize_tuple(
-                3,
+                4,
                 V {
-                    phantom_data: PhantomData::<(B, L, N)>,
+                    phantom_data: PhantomData::<(B, L, N, P)>,
                 },
             )
         }

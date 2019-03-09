@@ -1,5 +1,6 @@
 use generic_array::GenericArray;
 use secp256k1::{PublicKey, SecretKey};
+use super::Processed;
 
 mod packet {
     use super::super::{PseudoRandomStream, OnionPacket};
@@ -10,9 +11,9 @@ mod packet {
     use digest::{Input, BlockInput, FixedOutput, Reset};
     use generic_array::{GenericArray, typenum::{U16, U32}};
 
-    pub type FullPacket<L, N> = OnionPacket<(SecretKey, Hmac<Sha256>, Sha256, ChaCha), L, N>;
-    pub type TruncatedPacket<L, N> =
-        OnionPacket<(SecretKey, Hmac<TruncatedSha256>, Sha256, ChaCha), L, N>;
+    pub type FullPacket<L, N, P> = OnionPacket<(SecretKey, Hmac<Sha256>, Sha256, ChaCha), L, N, P>;
+    pub type TruncatedPacket<L, N, P> =
+        OnionPacket<(SecretKey, Hmac<TruncatedSha256>, Sha256, ChaCha), L, N, P>;
 
     impl PseudoRandomStream<U16> for ChaCha {
         fn seed(v: GenericArray<u8, U16>) -> Self {
@@ -73,11 +74,11 @@ mod packet {
     }
 }
 
-use self::packet::{FullPacket, TruncatedPacket, TruncatedSha256};
+use self::packet::{FullPacket, TruncatedPacket};
 
 #[test]
 fn packet() {
-    use generic_array::typenum::{U32, U33, U20};
+    use generic_array::typenum::{U33, U20, U0};
 
     let reference_packet = "02eec7245d6b7d2ccb30380bfbe2a3648cd7\
                             a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e4\
@@ -154,11 +155,11 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = FullPacket::<_, U20>::new(
+    let packet = FullPacket::<_, U20, U0>::new(
         associated_data,
-        GenericArray::<u8, U32>::default(),
         secret_key,
         path,
+        GenericArray::default(),
     )
     .unwrap();
 
@@ -176,18 +177,18 @@ fn packet() {
 #[test]
 #[allow(non_shorthand_field_patterns)]
 fn path() {
-    use generic_array::typenum::{U8, U50};
+    use generic_array::typenum::{U19, U5, U800};
     use generic_array::sequence::GenericSequence;
-    use hmac::{Hmac, Mac};
     use secp256k1::Secp256k1;
+    use either::{Left, Right};
 
     let context = Secp256k1::new();
 
-    let (secrets, route): (Vec<SecretKey>, Vec<(PublicKey, _)>) = (0..6)
+    let (secrets, route): (Vec<SecretKey>, Vec<(PublicKey, _)>) = (0..4)
         .map(|_| {
             let secret = SecretKey::new(&mut rand::thread_rng());
             let public = PublicKey::from_secret_key(&context, &secret);
-            let payload = GenericArray::<u8, U8>::generate(|_| rand::random());
+            let payload = GenericArray::<u8, _>::generate(|_| rand::random());
             (secret, (public, payload))
         })
         .unzip();
@@ -200,26 +201,39 @@ fn path() {
         })
         .collect::<Vec<_>>();
 
-    let mut hmac = Hmac::<TruncatedSha256>::new_varkey(b"ssqq").unwrap();
-    hmac.input(b"test test data");
-
-    let packet = TruncatedPacket::<_, U50>::new(
+    let message = GenericArray::generate(|_| rand::random());
+    let packet = TruncatedPacket::<U19, U5, U800>::new(
         &[],
-        hmac.result().code(),
         SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),
+        message,
     )
     .unwrap();
 
-    let initial = (packet, Vec::new());
-    let (_next, output) = secrets
+    let initial = (Left(packet), Vec::new());
+    let (last, output) = secrets
         .into_iter()
         .fold(initial, |(packet, mut payloads), secret| {
-            let (next, output) = packet.process(&[], secret).unwrap();
-            dbg!(hex::encode(&output.data));
-            payloads.push(output.data);
-            (next, payloads)
+            match packet.left().unwrap().process(&[], secret).unwrap() {
+                Processed::Forward {
+                    data: data,
+                    next: next,
+                } => {
+                    dbg!(hex::encode(&data));
+                    payloads.push(data);
+                    (Left(next), payloads)
+                },
+                Processed::Exit {
+                    data: data,
+                    message: message,
+                } => {
+                    dbg!(hex::encode(message));
+                    payloads.push(data);
+                    (Right(message), payloads)
+                }
+            }
         });
 
     assert_eq!(payloads, output);
+    assert_eq!(last.right(), Some(message));
 }
