@@ -40,7 +40,7 @@ where
     B: Sphinx,
     L: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
-    P: ArrayLength<u8>,
+    P: AsMut<[u8]>,
 {
     Forward {
         data: GenericArray<u8, L>,
@@ -48,7 +48,7 @@ where
     },
     Exit {
         data: GenericArray<u8, L>,
-        message: GenericArray<u8, P>,
+        message: P,
     },
 }
 
@@ -57,12 +57,12 @@ where
     B: Sphinx,
     L: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
-    P: ArrayLength<u8>,
+    P: AsMut<[u8]>,
 {
     public_key: <B::AsymmetricKey as SecretKey>::PublicKey,
     routing_info: Path<L, B::MacLength, N>,
     hmac: GenericArray<u8, B::MacLength>,
-    message: GenericArray<u8, P>,
+    message: P,
 }
 
 impl<B, L, N, P> OnionPacket<B, L, N, P>
@@ -72,13 +72,13 @@ where
     B::AsymmetricKey: Array,
     L: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
-    P: ArrayLength<u8>,
+    P: AsMut<[u8]>,
 {
     pub fn new<T, H>(
         associated_data: T,
         session_key: B::AsymmetricKey,
         route: H,
-        message: GenericArray<u8, P>,
+        message: P,
     ) -> Result<Self, <B::AsymmetricKey as SecretKey>::Error>
     where
         T: AsRef<[u8]>,
@@ -258,7 +258,7 @@ mod serde_m {
         B::AsymmetricKey: Array,
         L: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, B::MacLength>>,
-        P: ArrayLength<u8>,
+        P: AsMut<[u8]> + Serialize,
     {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -283,7 +283,7 @@ mod serde_m {
         B::AsymmetricKey: Array,
         L: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, B::MacLength>>,
-        P: ArrayLength<u8>,
+        P: AsMut<[u8]> + for<'d> Deserialize<'d>,
     {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
@@ -299,7 +299,7 @@ mod serde_m {
                 B::AsymmetricKey: Array,
                 L: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, B::MacLength>>,
-                P: ArrayLength<u8>,
+                P: AsMut<[u8]> + for<'d> Deserialize<'d>,
             {
                 phantom_data: PhantomData<(B, L, N, P)>,
             }
@@ -312,7 +312,7 @@ mod serde_m {
                 B::AsymmetricKey: Array,
                 L: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, B::MacLength>>,
-                P: ArrayLength<u8>,
+                P: AsMut<[u8]> + for<'d> Deserialize<'d>,
             {
                 type Value = OnionPacket<B, L, N, P>;
 
@@ -336,7 +336,7 @@ mod serde_m {
                     let m: GenericArray<u8, B::MacLength> = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
-                    let ms: GenericArray<u8, P> = sequence
+                    let ms: P = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
 

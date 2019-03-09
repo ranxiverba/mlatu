@@ -78,7 +78,17 @@ use self::packet::{FullPacket, TruncatedPacket};
 
 #[test]
 fn packet() {
-    use generic_array::typenum::{U33, U20, U0};
+    use generic_array::typenum::{U33, U20};
+    use serde_derive::{Serialize, Deserialize};
+
+    #[derive(Serialize, Deserialize)]
+    struct Empty;
+
+    impl AsMut<[u8]> for Empty {
+        fn as_mut(&mut self) -> &mut [u8] {
+            &mut []
+        }
+    }
 
     let reference_packet = "02eec7245d6b7d2ccb30380bfbe2a3648cd7\
                             a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e4\
@@ -148,27 +158,25 @@ fn packet() {
     let path = public_keys_texts.iter().enumerate().map(|(i, &d)| {
         let pk = PublicKey::from_slice(hex::decode(d).unwrap().as_slice()).unwrap();
         let x = i as u8;
-        let payload = GenericArray::<_, U33>::clone_from_slice(&[
+        let payload = GenericArray::clone_from_slice(&[
             0, x, x, x, x, x, x, x, x, 0, 0, 0, 0, 0, 0, 0, x, 0, 0, 0, x, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0,
         ]);
         (pk, payload)
     });
 
-    let packet = FullPacket::<_, U20, U0>::new(
+    let packet = FullPacket::<U33, U20, Empty>::new(
         associated_data,
         secret_key,
         path,
-        GenericArray::default(),
+        Empty,
     )
     .unwrap();
 
     use tirse::{DefaultBinarySerializer, WriteWrapper};
     use serde::Serialize;
 
-    let v = Vec::new();
-
-    let s = DefaultBinarySerializer::<WriteWrapper<Vec<_>>, String>::new(v);
+    let s = DefaultBinarySerializer::<WriteWrapper<Vec<_>>, String>::new(Vec::new());
     let v = packet.serialize(s).unwrap().consume().into_inner();
 
     assert_eq!(hex::encode(v), reference_packet);
@@ -177,10 +185,70 @@ fn packet() {
 #[test]
 #[allow(non_shorthand_field_patterns)]
 fn path() {
-    use generic_array::typenum::{U19, U5, U800};
+    use generic_array::typenum::{U19, U5};
     use generic_array::sequence::GenericSequence;
     use secp256k1::Secp256k1;
     use either::{Left, Right};
+    use std::fmt;
+    use serde::{Serialize, Serializer};
+    use tirse::{DefaultBinarySerializer, WriteWrapper};
+
+    const MESSAGE_LENGTH: usize = 4096 - 224;
+
+    #[derive(Clone)]
+    struct Message([u8; MESSAGE_LENGTH]);
+
+    impl Message {
+        pub fn random() -> Self {
+            let mut array = [0; MESSAGE_LENGTH];
+            for i in 0..MESSAGE_LENGTH {
+                array[i] = rand::random();
+            }
+            Message(array)
+        }
+    }
+
+    impl Eq for Message {
+    }
+
+    impl PartialEq<Self> for Message {
+        fn eq(&self, other: &Self) -> bool {
+            (0..MESSAGE_LENGTH).fold(true, |a, index| a && self.0[index] == other.0[index])
+        }
+    }
+
+    impl fmt::Debug for Message {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:?}", hex::encode(self))
+        }
+    }
+
+    impl AsRef<[u8]> for Message {
+        fn as_ref(&self) -> &[u8] {
+            &self.0[..]
+        }
+    }
+
+    impl AsMut<[u8]> for Message {
+        fn as_mut(&mut self) -> &mut [u8] {
+            &mut self.0[..]
+        }
+    }
+
+    impl Serialize for Message {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            use serde::ser::SerializeTuple;
+
+            let mut tuple = serializer.serialize_tuple(MESSAGE_LENGTH)?;
+            for i in 0..MESSAGE_LENGTH {
+                tuple.serialize_element(&self.0[i])?;
+            }
+            tuple.end()
+        }
+    }
 
     let context = Secp256k1::new();
 
@@ -201,14 +269,17 @@ fn path() {
         })
         .collect::<Vec<_>>();
 
-    let message = GenericArray::generate(|_| rand::random());
-    let packet = TruncatedPacket::<U19, U5, U800>::new(
+    let message = Message::random();
+    let packet = TruncatedPacket::<U19, U5, Message>::new(
         &[],
         SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),
-        message,
+        message.clone(),
     )
     .unwrap();
+
+    let s = DefaultBinarySerializer::<WriteWrapper<Vec<_>>, String>::new(Vec::new());
+    let v = packet.serialize(s).unwrap().consume().into_inner();
 
     let initial = (Left(packet), Vec::new());
     let (last, output) = secrets
@@ -227,13 +298,16 @@ fn path() {
                     data: data,
                     message: message,
                 } => {
-                    dbg!(hex::encode(message));
+                    dbg!(hex::encode(&data));
+                    dbg!(hex::encode(message.as_ref()));
                     payloads.push(data);
                     (Right(message), payloads)
                 }
             }
         });
 
+    dbg!(hex::encode(&v));
     assert_eq!(payloads, output);
     assert_eq!(last.right(), Some(message));
+    assert_eq!(v.len(), 4096);
 }
