@@ -1,7 +1,6 @@
 use generic_array::{GenericArray, ArrayLength};
 use std::ops::BitXorAssign;
 use keystream::KeyStream;
-use crypto_mac::Mac;
 
 #[cfg(feature = "serde-support")]
 use serde_derive::{Serialize, Deserialize};
@@ -112,25 +111,6 @@ where
         Path {
             raw: GenericArray::<PayloadHmac<L, M>, N>::default(),
         }
-    }
-
-    pub fn calc_hmac<C, T>(
-        &self,
-        mu: &GenericArray<u8, M>,
-        associated_data: T,
-    ) -> GenericArray<u8, M>
-    where
-        C: Mac<OutputSize = M>,
-        T: AsRef<[u8]>,
-    {
-        let mac = C::new_varkey(&mu).unwrap();
-        let mut mac = self.as_ref().iter().fold(mac, |mut mac, hop| {
-            mac.input(&hop.data);
-            mac.input(&hop.hmac);
-            mac
-        });
-        mac.input(associated_data.as_ref());
-        mac.result().code()
     }
 
     pub fn push(&mut self, item: PayloadHmac<L, M>) {

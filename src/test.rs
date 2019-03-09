@@ -10,9 +10,9 @@ mod packet {
     use digest::{Input, BlockInput, FixedOutput, Reset};
     use generic_array::{GenericArray, typenum::{U16, U32}};
 
-    pub type FullPacket<L, M, N> = OnionPacket<SecretKey, ChaCha, Hmac<Sha256>, Sha256, L, M, N>;
-    pub type TruncatedPacket<L, M, N> =
-        OnionPacket<SecretKey, ChaCha, Hmac<TruncatedSha256>, Sha256, L, M, N>;
+    pub type FullPacket<L, N> = OnionPacket<(SecretKey, Hmac<Sha256>, Sha256, ChaCha), L, N>;
+    pub type TruncatedPacket<L, N> =
+        OnionPacket<(SecretKey, Hmac<TruncatedSha256>, Sha256, ChaCha), L, N>;
 
     impl PseudoRandomStream<U16> for ChaCha {
         fn seed(v: GenericArray<u8, U16>) -> Self {
@@ -154,7 +154,7 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = FullPacket::<_, _, U20>::new(
+    let packet = FullPacket::<_, U20>::new(
         associated_data,
         GenericArray::<u8, U32>::default(),
         secret_key,
@@ -200,7 +200,7 @@ fn path() {
     let mut hmac = Hmac::<TruncatedSha256>::new_varkey(b"ssqq").unwrap();
     hmac.input(b"test test data");
 
-    let packet = TruncatedPacket::<_, _, U50>::new(
+    let packet = TruncatedPacket::<_, U50>::new(
         &[],
         hmac.result().code(),
         SecretKey::new(&mut rand::thread_rng()),
