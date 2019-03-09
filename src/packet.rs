@@ -9,18 +9,19 @@ use keystream::SeekableKeyStream;
 use either::Either;
 use std::marker::PhantomData;
 
-pub trait PseudoRandomStream {
-    fn seed<T>(v: T) -> Self
-    where
-        T: AsRef<[u8]>;
+pub trait PseudoRandomStream<T>
+where
+    T: ArrayLength<u8>,
+{
+    fn seed(v: GenericArray<u8, T>) -> Self;
 }
 
 pub struct OnionPacket<A, S, C, D, L, M, N>
 where
     A: SecretKey,
-    S: PseudoRandomStream + SeekableKeyStream,
+    S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
     C: Mac<OutputSize = M>,
-    D: Default + Input + FixedOutput<OutputSize = M>,
+    D: Default + Input + FixedOutput<OutputSize = A::Length>,
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, M>>,
@@ -35,9 +36,9 @@ impl<A, S, C, D, L, M, N> OnionPacket<A, S, C, D, L, M, N>
 where
     A: SecretKey + Array,
     A::PublicKey: Clone,
-    S: PseudoRandomStream + SeekableKeyStream,
+    S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
     C: Mac<OutputSize = M>,
-    D: Default + Input + FixedOutput<OutputSize = M>,
+    D: Default + Input + FixedOutput<OutputSize = A::Length>,
     L: ArrayLength<u8>,
     M: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, M>>,
@@ -85,7 +86,7 @@ where
             .map(|(s, p, _, _)| (s, p))?;
 
         let mut hmac = initial_hmac;
-        let mut routing_info = Path::<L, D::OutputSize, N>::new();
+        let mut routing_info = Path::<L, M, N>::new();
 
         let length = shared_secrets.len();
         for i in 0..length {
@@ -201,9 +202,9 @@ mod serde_m {
     where
         A: SecretKey + Array,
         A::PublicKey: Clone,
-        S: PseudoRandomStream + SeekableKeyStream,
+        S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
         C: Mac<OutputSize = M>,
-        D: Default + Input + FixedOutput<OutputSize = M>,
+        D: Default + Input + FixedOutput<OutputSize = A::Length>,
         L: ArrayLength<u8>,
         M: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, M>>,
@@ -227,9 +228,9 @@ mod serde_m {
         A: SecretKey + Array,
         A::PublicKey: Clone,
         A::Error: fmt::Display,
-        S: PseudoRandomStream + SeekableKeyStream,
+        S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
         C: Mac<OutputSize = M>,
-        D: Default + Input + FixedOutput<OutputSize = M>,
+        D: Default + Input + FixedOutput<OutputSize = A::Length>,
         L: ArrayLength<u8>,
         M: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, M>>,
@@ -245,9 +246,9 @@ mod serde_m {
                 A: SecretKey + Array,
                 A::PublicKey: Clone,
                 A::Error: fmt::Display,
-                S: PseudoRandomStream + SeekableKeyStream,
+                S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
                 C: Mac<OutputSize = M>,
-                D: Default + Input + FixedOutput<OutputSize = M>,
+                D: Default + Input + FixedOutput<OutputSize = A::Length>,
                 L: ArrayLength<u8>,
                 M: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, M>>,
@@ -260,9 +261,9 @@ mod serde_m {
                 A: SecretKey + Array,
                 A::PublicKey: Clone,
                 A::Error: fmt::Display,
-                S: PseudoRandomStream + SeekableKeyStream,
+                S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
                 C: Mac<OutputSize = M>,
-                D: Default + Input + FixedOutput<OutputSize = M>,
+                D: Default + Input + FixedOutput<OutputSize = A::Length>,
                 L: ArrayLength<u8>,
                 M: ArrayLength<u8>,
                 N: ArrayLength<PayloadHmac<L, M>>,

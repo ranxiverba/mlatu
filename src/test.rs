@@ -1,22 +1,79 @@
-use super::{PseudoRandomStream, OnionPacket};
 use generic_array::GenericArray;
-use hmac::Hmac;
 use secp256k1::{PublicKey, SecretKey};
-use sha2::Sha256;
-use chacha::ChaCha;
 
-type ThisPacket<L, M, N> = OnionPacket<SecretKey, ChaCha, Hmac<Sha256>, Sha256, L, M, N>;
+mod packet {
+    use super::super::{PseudoRandomStream, OnionPacket};
+    use sha2::Sha256;
+    use chacha::ChaCha;
+    use hmac::Hmac;
+    use secp256k1::SecretKey;
+    use digest::{Input, BlockInput, FixedOutput, Reset};
+    use generic_array::{GenericArray, typenum::{U16, U32}};
 
-impl PseudoRandomStream for ChaCha {
-    fn seed<T>(v: T) -> Self
-    where
-        T: AsRef<[u8]>,
-    {
-        let mut array = [0; 32];
-        array.copy_from_slice(v.as_ref());
-        ChaCha::new_chacha20(&array, &[0u8; 8])
+    pub type FullPacket<L, M, N> = OnionPacket<SecretKey, ChaCha, Hmac<Sha256>, Sha256, L, M, N>;
+    pub type TruncatedPacket<L, M, N> =
+        OnionPacket<SecretKey, ChaCha, Hmac<TruncatedSha256>, Sha256, L, M, N>;
+
+    impl PseudoRandomStream<U16> for ChaCha {
+        fn seed(v: GenericArray<u8, U16>) -> Self {
+            let mut array = [0; 32];
+            array[0..16].copy_from_slice(v.as_ref());
+            array[16..].copy_from_slice(v.as_ref());
+            ChaCha::new_chacha20(&array, &[0u8; 8])
+        }
+    }
+
+    impl PseudoRandomStream<U32> for ChaCha {
+        fn seed(v: GenericArray<u8, U32>) -> Self {
+            let mut array = [0; 32];
+            array.copy_from_slice(v.as_ref());
+            ChaCha::new_chacha20(&array, &[0u8; 8])
+        }
+    }
+
+    pub struct TruncatedSha256(Sha256);
+
+    impl Input for TruncatedSha256 {
+        fn input<B: AsRef<[u8]>>(&mut self, data: B) {
+            self.0.input(data)
+        }
+    }
+
+    impl BlockInput for TruncatedSha256 {
+        type BlockSize = <Sha256 as BlockInput>::BlockSize;
+    }
+
+    impl FixedOutput for TruncatedSha256 {
+        type OutputSize = U16;
+
+        fn fixed_result(self) -> GenericArray<u8, Self::OutputSize> {
+            use generic_array::sequence::GenericSequence;
+
+            let o = self.0.fixed_result();
+            GenericArray::generate(|x| o[x])
+        }
+    }
+
+    impl Reset for TruncatedSha256 {
+        fn reset(&mut self) {
+            self.0.reset()
+        }
+    }
+
+    impl Default for TruncatedSha256 {
+        fn default() -> Self {
+            TruncatedSha256(Sha256::default())
+        }
+    }
+
+    impl Clone for TruncatedSha256 {
+        fn clone(&self) -> Self {
+            TruncatedSha256(self.0.clone())
+        }
     }
 }
+
+use self::packet::{FullPacket, TruncatedPacket, TruncatedSha256};
 
 #[test]
 fn packet() {
@@ -97,7 +154,7 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = ThisPacket::<_, _, U20>::new(
+    let packet = FullPacket::<_, _, U20>::new(
         associated_data,
         GenericArray::<u8, U32>::default(),
         secret_key,
@@ -121,7 +178,7 @@ fn packet() {
 fn path() {
     use generic_array::typenum::{U8, U50};
     use generic_array::sequence::GenericSequence;
-    use hmac::Mac;
+    use hmac::{Hmac, Mac};
     use secp256k1::Secp256k1;
 
     let context = Secp256k1::new();
@@ -140,10 +197,10 @@ fn path() {
         .map(|(_, payload)| { dbg!(hex::encode(&payload)); payload.clone() })
         .collect::<Vec<_>>();
 
-    let mut hmac = Hmac::<Sha256>::new_varkey(b"ssqq").unwrap();
+    let mut hmac = Hmac::<TruncatedSha256>::new_varkey(b"ssqq").unwrap();
     hmac.input(b"test test data");
 
-    let packet = ThisPacket::<_, _, U50>::new(
+    let packet = TruncatedPacket::<_, _, U50>::new(
         &[],
         hmac.result().code(),
         SecretKey::new(&mut rand::thread_rng()),
