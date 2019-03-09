@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-#[cfg(test)]
+#[cfg(all(test, feature = "serde-support"))]
 mod test;
 
 mod key;

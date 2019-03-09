@@ -53,7 +53,6 @@ where
         T: AsRef<[u8]>,
         H: Iterator<Item = (A::PublicKey, GenericArray<u8, L>)>,
     {
-        let base_point = A::PublicKey::base_point();
         let contexts = A::contexts();
         let public_key = session_key.paired(&contexts.0);
 
@@ -76,7 +75,7 @@ where
                         .chain(&result)
                         .fixed_result();
                     secret.mul_assign(&blinding)?;
-                    let public = secret.dh(&contexts.1, &base_point)?;
+                    let public = secret.paired(&contexts.0);
 
                     s.push(result);
                     p.push(payload);
@@ -185,7 +184,7 @@ where
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde-support")]
 mod serde_m {
     use super::{OnionPacket, Path, PayloadHmac, PseudoRandomStream};
 
