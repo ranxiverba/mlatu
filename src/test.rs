@@ -194,7 +194,10 @@ fn path() {
 
     let payloads = route
         .iter()
-        .map(|(_, payload)| { dbg!(hex::encode(&payload)); payload.clone() })
+        .map(|(_, payload)| {
+            dbg!(hex::encode(&payload));
+            payload.clone()
+        })
         .collect::<Vec<_>>();
 
     let mut hmac = Hmac::<TruncatedSha256>::new_varkey(b"ssqq").unwrap();
@@ -212,9 +215,7 @@ fn path() {
     let (_next, output) = secrets
         .into_iter()
         .fold(initial, |(packet, mut payloads), secret| {
-            let (next, output) = packet
-                .process(&[], secret)
-                .unwrap();
+            let (next, output) = packet.process(&[], secret).unwrap();
             dbg!(hex::encode(&output.data));
             payloads.push(output.data);
             (next, payloads)

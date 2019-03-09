@@ -18,7 +18,8 @@ pub trait Sphinx {
     type Stream: KeyStream + SeekableKeyStream;
     type Collector;
 
-    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>) -> Self::Collector;
+    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>)
+        -> Self::Collector;
 
     fn chain<T>(collector: Self::Collector, data: T) -> Self::Collector
     where
@@ -53,7 +54,9 @@ where
     type Stream = S;
     type Collector = C;
 
-    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>) -> Self::Collector {
+    fn mu(
+        shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>,
+    ) -> Self::Collector {
         let mut collector = C::new_varkey(b"mu").unwrap();
         collector.input(shared);
         let key = collector.result().code();

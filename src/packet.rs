@@ -62,7 +62,12 @@ where
     ) -> Result<Self, <B::AsymmetricKey as SecretKey>::Error>
     where
         T: AsRef<[u8]>,
-        H: Iterator<Item = (<B::AsymmetricKey as SecretKey>::PublicKey, GenericArray<u8, L>)>,
+        H: Iterator<
+            Item = (
+                <B::AsymmetricKey as SecretKey>::PublicKey,
+                GenericArray<u8, L>,
+            ),
+        >,
     {
         let contexts = <B::AsymmetricKey as SecretKey>::contexts();
         let public_key = session_key.paired(&contexts.0);
@@ -121,9 +126,10 @@ where
                 routing_info ^= &mut stream;
 
                 let mu = B::mu(&shared_secrets[index]);
-                let mu = routing_info.as_ref().iter().fold(mu, |mu, hop| {
-                    B::chain(B::chain(mu, &hop.data), &hop.hmac)
-                });
+                let mu = routing_info
+                    .as_ref()
+                    .iter()
+                    .fold(mu, |mu, hop| B::chain(B::chain(mu, &hop.data), &hop.hmac));
                 let mu = B::chain(mu, associated_data.as_ref());
                 hmac = B::output(mu);
             });
@@ -161,9 +167,10 @@ where
         let (mut routing_info, hmac_received) = (self.routing_info, self.hmac);
 
         let mu = B::mu(&shared_secret);
-        let mu = routing_info.as_ref().iter().fold(mu, |mu, hop| {
-            B::chain(B::chain(mu, &hop.data), &hop.hmac)
-        });
+        let mu = routing_info
+            .as_ref()
+            .iter()
+            .fold(mu, |mu, hop| B::chain(B::chain(mu, &hop.data), &hop.hmac));
         let mu = B::chain(mu, associated_data.as_ref());
         let hmac = B::output(mu);
 
@@ -269,7 +276,10 @@ mod serde_m {
                 where
                     S: SeqAccess<'de>,
                 {
-                    let k: GenericArray<u8, <<B::AsymmetricKey as SecretKey>::PublicKey as PublicKey>::Length> = sequence
+                    let k: GenericArray<
+                        u8,
+                        <<B::AsymmetricKey as SecretKey>::PublicKey as PublicKey>::Length,
+                    > = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
                     let p: Path<L, B::MacLength, N> = sequence
