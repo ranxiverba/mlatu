@@ -193,7 +193,8 @@ where
             (shared_secret, next_dh_key)
         };
 
-        let (mut routing_info, hmac_received, mut message) = (self.routing_info, self.hmac, self.message);
+        let (mut routing_info, hmac_received, mut message) =
+            (self.routing_info, self.hmac, self.message);
 
         let mu = B::mu(&shared_secret);
         let mu = routing_info

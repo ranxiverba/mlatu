@@ -165,13 +165,8 @@ fn packet() {
         (pk, payload)
     });
 
-    let packet = FullPacket::<U33, U20, Empty>::new(
-        associated_data,
-        secret_key,
-        path,
-        Empty,
-    )
-    .unwrap();
+    let packet =
+        FullPacket::<U33, U20, Empty>::new(associated_data, secret_key, path, Empty).unwrap();
 
     use tirse::{DefaultBinarySerializer, WriteWrapper};
     use serde::Serialize;
@@ -208,8 +203,7 @@ fn path() {
         }
     }
 
-    impl Eq for Message {
-    }
+    impl Eq for Message {}
 
     impl PartialEq<Self> for Message {
         fn eq(&self, other: &Self) -> bool {
@@ -302,7 +296,7 @@ fn path() {
                     dbg!(hex::encode(message.as_ref()));
                     payloads.push(data);
                     (Right(message), payloads)
-                }
+                },
             }
         });
 
