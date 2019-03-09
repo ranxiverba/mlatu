@@ -7,6 +7,5 @@ mod path;
 mod sphinx;
 mod packet;
 
-pub use self::path::PayloadHmac;
-pub use self::sphinx::PseudoRandomStream;
-pub use self::packet::{OnionPacket, Processed, ProcessingError};
+pub use self::sphinx::{Sphinx, PseudoRandomStream};
+pub use self::packet::{Packet, Processed, ProcessingError};

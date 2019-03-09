@@ -44,7 +44,7 @@ where
 {
     Forward {
         data: GenericArray<u8, L>,
-        next: OnionPacket<B, L, N, P>,
+        next: Packet<B, L, N, P>,
     },
     Exit {
         data: GenericArray<u8, L>,
@@ -52,7 +52,7 @@ where
     },
 }
 
-pub struct OnionPacket<B, L, N, P>
+pub struct Packet<B, L, N, P>
 where
     B: Sphinx,
     L: ArrayLength<u8>,
@@ -65,7 +65,7 @@ where
     message: P,
 }
 
-impl<B, L, N, P> OnionPacket<B, L, N, P>
+impl<B, L, N, P> Packet<B, L, N, P>
 where
     B: Sphinx,
     <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
@@ -160,7 +160,7 @@ where
                 hmac = B::output(mu);
             });
 
-        Ok(OnionPacket {
+        Ok(Packet {
             public_key: public_key,
             routing_info: routing_info,
             hmac: hmac,
@@ -226,7 +226,7 @@ where
                     message: message,
                 })
             } else {
-                let next = OnionPacket {
+                let next = Packet {
                     public_key: next_dh_key,
                     routing_info: routing_info,
                     hmac: item_hmac,
@@ -244,7 +244,7 @@ where
 
 #[cfg(feature = "serde-support")]
 mod serde_m {
-    use super::{OnionPacket, Path, PayloadHmac, Sphinx};
+    use super::{Packet, Path, PayloadHmac, Sphinx};
 
     use generic_array::{GenericArray, ArrayLength};
     use abstract_cryptography::{Array, SecretKey, PublicKey};
@@ -252,7 +252,7 @@ mod serde_m {
     use std::marker::PhantomData;
     use std::fmt;
 
-    impl<B, L, N, P> Serialize for OnionPacket<B, L, N, P>
+    impl<B, L, N, P> Serialize for Packet<B, L, N, P>
     where
         B: Sphinx,
         <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
@@ -276,7 +276,7 @@ mod serde_m {
         }
     }
 
-    impl<'de, B, L, N, P> Deserialize<'de> for OnionPacket<B, L, N, P>
+    impl<'de, B, L, N, P> Deserialize<'de> for Packet<B, L, N, P>
     where
         B: Sphinx,
         <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
@@ -315,7 +315,7 @@ mod serde_m {
                 N: ArrayLength<PayloadHmac<L, B::MacLength>>,
                 P: AsMut<[u8]> + for<'d> Deserialize<'d>,
             {
-                type Value = OnionPacket<B, L, N, P>;
+                type Value = Packet<B, L, N, P>;
 
                 fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     write!(f, "bytes")
@@ -344,7 +344,7 @@ mod serde_m {
                     let public_key =
                         PublicKey::from_raw(k).map_err(|e| Error::custom(format!("{}", e)))?;
 
-                    Ok(OnionPacket {
+                    Ok(Packet {
                         public_key: public_key,
                         routing_info: p,
                         hmac: m,
