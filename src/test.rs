@@ -90,60 +90,50 @@ fn packet() {
         }
     }
 
-    let reference_packet = "02eec7245d6b7d2ccb30380bfbe2a3648cd7\
-                            a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e4\
-                            6d421e9615471ab9e0bc887beff8c95fdb878f7b3a71da571226\
-                            458c510bbadd1276f045c21c520a07d35da256ef75b436796243\
-                            7b0dd10f7d61ab590531cf08000178a333a347f8b4072e216400\
-                            406bdf3bf038659793a86cae5f52d32f3438527b47a1cfc54285\
-                            a8afec3a4c9f3323db0c946f5d4cb2ce721caad69320c3a469a2\
-                            02f3e468c67eaf7a7cda226d0fd32f7b48084dca885d15222e60\
-                            826d5d971f64172d98e0760154400958f00e86697aa1aa9d41be\
-                            e8119a1ec866abe044a9ad635778ba61fc0776dc832b39451bd5\
-                            d35072d2269cf9b040d6ba38b54ec35f81d7fc67678c3be47274\
-                            f3c4cc472aff005c3469eb3bc140769ed4c7f0218ff8c6c7dd72\
-                            21d189c65b3b9aaa71a01484b122846c7c7b57e02e679ea8469b\
-                            70e14fe4f70fee4d87b910cf144be6fe48eef24da475c0b0bcc6\
-                            565ae82cd3f4e3b24c76eaa5616c6111343306ab35c1fe5ca4a7\
-                            7c0e314ed7dba39d6f1e0de791719c241a939cc493bea2bae1c1\
-                            e932679ea94d29084278513c77b899cc98059d06a27d171b0dbd\
-                            f6bee13ddc4fc17a0c4d2827d488436b57baa167544138ca2e64\
-                            a11b43ac8a06cd0c2fba2d4d900ed2d9205305e2d7383cc98dac\
-                            b078133de5f6fb6bed2ef26ba92cea28aafc3b9948dd9ae5559e\
-                            8bd6920b8cea462aa445ca6a95e0e7ba52961b181c79e73bd581\
-                            821df2b10173727a810c92b83b5ba4a0403eb710d2ca10689a35\
-                            bec6c3a708e9e92f7d78ff3c5d9989574b00c6736f84c199256e\
-                            76e19e78f0c98a9d580b4a658c84fc8f2096c2fbea8f5f8c59d0\
-                            fdacb3be2802ef802abbecb3aba4acaac69a0e965abd8981e989\
-                            6b1f6ef9d60f7a164b371af869fd0e48073742825e9434fc54da\
-                            837e120266d53302954843538ea7c6c3dbfb4ff3b2fdbe244437\
-                            f2a153ccf7bdb4c92aa08102d4f3cff2ae5ef86fab4653595e6a\
-                            5837fa2f3e29f27a9cde5966843fb847a4a61f1e76c281fe8bb2\
-                            b0a181d096100db5a1a5ce7a910238251a43ca556712eaadea16\
-                            7fb4d7d75825e440f3ecd782036d7574df8bceacb397abefc5f5\
-                            254d2722215c53ff54af8299aaaad642c6d72a14d27882d9bbd5\
-                            39e1cc7a527526ba89b8c037ad09120e98ab042d3e8652b31ae0\
-                            e478516bfaf88efca9f3676ffe99d2819dcaeb7610a626695f53\
-                            117665d267d3f7abebd6bbd6733f645c72c389f03855bdf1e4b8\
-                            075b516569b118233a0f0971d24b83113c0b096f5216a207ca99\
-                            a7cddc81c130923fe3d91e7508c9ac5f2e914ff5dccab9e55856\
-                            6fa14efb34ac98d878580814b94b73acbfde9072f30b881f7f0f\
-                            ff42d4045d1ace6322d86a97d164aa84d93a60498065cc7c20e6\
-                            36f5862dc81531a88c60305a2e59a985be327a6902e4bed986db\
-                            f4a0b50c217af0ea7fdf9ab37f9ea1a1aaa72f54cf40154ea9b2\
-                            69f1a7c09f9f43245109431a175d50e2db0132337baa0ef97eed\
-                            0fcf20489da36b79a1172faccc2f7ded7c60e00694282d93359c\
-                            4682135642bc81f433574aa8ef0c97b4ade7ca372c5ffc23c7ed\
-                            dd839bab4e0f14d6df15c9dbeab176bec8b5701cf054eb3072f6\
-                            dadc98f88819042bf10c407516ee58bce33fbe3b3d86a54255e5\
-                            77db4598e30a135361528c101683a5fcde7e8ba53f3456254be8\
-                            f45fe3a56120ae96ea3773631fcb3873aa3abd91bcff00bd38bd\
-                            43697a2e789e00da6077482e7b1b1a677b5afae4c54e6cbdf737\
-                            7b694eb7d7a5b913476a5be923322d3de06060fd5e819635232a\
-                            2cf4f0731da13b8546d1d6d4f8d75b9fce6c2341a71b0ea6f780\
-                            df54bfdb0dd5cd9855179f602f917265f21f9190c70217774a6f\
-                            baaa7d63ad64199f4664813b955cff954949076dcf";
-    let secret_key_text = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    let reference_packet = "\
+                            02e90777e8702e3d587e17c8627a997b0225f4a5a5f82115f13046aab95513c6d6\
+                            3180bc084cc0f52d4ebcc8a69607518b8e0e24dc54b2fb1833d45fa8b5395a7ebc\
+                            3263114916dafe806741f9b178476afdeff3628cba5126d9cb2627bb11e4e50b\
+                            3cdae95e3b343e054f69ab45024db67c78521dc20d91ce995d4650c7c93a99d2cb\
+                            60302b35ca6ec0e5f1f5c6b595d9ce327c5c28fc6d5859830bff356d9ffbacc2\
+                            6d9703e203dc5cf023340d206c53dc9b082667d56970b14abae8b079e5d3d7a412\
+                            0e4e5bb6833c04254924297561a4554a11ff46b93293285026b5045d0689bda6\
+                            34a47b64969f2f2aaa9e4c85f3d1d8365f6d49a4963b341ab8e7e56f0f8ce53d33\
+                            21eddf20f563cdcefd385a91d7b77fcfc258f42a49b5b15a95a0847f0922a5c5\
+                            4478fdc9637b4d6724923f769d13801631321ee8959b83ec5108ae7ac9bd8310b0\
+                            21b9daffc173f4fc69462a10f488aef7c9c2c2e593ad0a2b8a7c7355151552a4\
+                            80b44902598949662954d322649fc8c5e5f6c6227277921fcb6209236ce9b0fdc8\
+                            96995603e1c3a54698a205210dc5423f75caaed37710ad90cc2d76fb573b51a1\
+                            8715bd4c9b274362727bc4499eeb8e7f7d00fedc0e3753e3b28d0ff2cb009d3be0\
+                            f52c30d213cf4db4e45830ef44d474cb1ed54682121b324d9d6bd22dfb8f346f\
+                            023515df76da1582937d372970c05e17e8810c2cbcf23c7dde44f4dd2dea898c1e\
+                            84d2b4d8d5a4c63f560b9783042927241bfaa9cf3f20c60045902f3b5d4f94a7\
+                            80ea348c1f4f7c200424145acf7ea6f2dcb8b98d4f6e2ae4bc836364095fc8c752\
+                            26de91d7da6a25cb918b7b2fba3cf756670388631789742e13a14b1f6d429b76\
+                            fffdb148a7586ee95e143caaaeba53dca2d8bbbaa6e3375f7cba494b663a019fe2\
+                            8ba1d8e1c08749c4c6b2f3084c5b9affdf4224639918c25c1a160a3310429285\
+                            040d883e93ca8a20c979f16166cca152df1af3891f5e35fc519c04159d5123be47\
+                            19598ffabc03d6c08e73e4319638a07ec21647b9c933d2212e2efdda2e78873a\
+                            bbae7d47a3905764c0f96a39600a880fce278ddcdf68b51ce8958c675519b3f834\
+                            cb2905a26cc8c757d17f495957d8bbddaaef4c4b17fc9771923d070ac0311df2\
+                            eaeb9821c9d42f96dd5be73f3a5ddd3bd47a4df6c1309677249a30d3d6db7b4634\
+                            6970ffcd958c6d653e9ace5adddd8cd359b12aef678cad77239ce63e0cb2fffd\
+                            487d1fc62e447f1636d829bd6fbe425e8f21fe391a9f1194c88905c8eda08fb6d6\
+                            b53029cf73e215589a25da9daacf2356d4eeb10f4acc92fa66a2ca635247936f\
+                            ac3988b5bf8ec792c5192328038218b651c6b7036014816bc06427fdd6a96bf031\
+                            6ddc19223266ae197fe63ac97d25add5a1e8edc356ac599638cd2b0b67b87b20\
+                            a940afe3bc6e6a88a3b0f668794ce91601c44f98aee43d09a914f1372735684785\
+                            46df5832344e249b5d2134852a6e2591b4bd25288dbaee8068b99105575c693f\
+                            8c6570ab8f5b08912e5ae256f6945d9c092bd448cd17a1085036b503c7df117f0b\
+                            d124f0273725c345cce220613a2a43aceb552146b057375737f1e9f7491b0534\
+                            bec2be7cbd06d34a618a9253b24b52c90c741cc2169d22fcf8dc0005cdb4ce3676\
+                            0fa798382cc21992a4bed890fe330f1373dbbdafb07300f7ba548eab180c168a\
+                            9aa9040d85e3e11e1f8334ce7c6b3963b38f4afa8e5d4b935976e68724f112fabc\
+                            96b77499c26c9eb95049911a49592d44176e82e20609cb0c77b70f34cb8eb025\
+                            f65773b38e5ed71971b85cc0a1e4187db5646c1824888306d7f3bfa4bc28bc2874\
+                            f61e4c7b472c52a56fbab53fb9d1a12dc0b9b2987ee3d573aa868b76164725c8\
+                            6caf4de1af441fe215435d88b26e4ab2229c519cf874c336bd6121825c7b681e";
+    let secret_key_text = "13131313131313131313131313131313";
     let associated_data_text = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
     let public_keys_texts = [
         "02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619",
