@@ -3,6 +3,9 @@ name = "mlatu"
 version = "0.1.0"
 authors = ["Ranxi Verba <ranxi.verba@gmail.com>"]
 edition = "2018"
+license = "Apache 2.0"
+repository = "https://github.com/ranxiverba/mlatu"
+description = "Sphinx mix network packet processor implemented in Rust"
 
 [dependencies.abstract-cryptography]
 git = "https://github.com/ranxiverba/abstract-cryptography.git"
