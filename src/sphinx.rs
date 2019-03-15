@@ -1,6 +1,6 @@
 use generic_array::{GenericArray, ArrayLength};
 use keystream::{KeyStream, SeekableKeyStream};
-use abstract_cryptography::{PublicKey, SecretKey};
+use abstract_cryptography::{Array, SecretKey};
 use crypto_mac::Mac;
 use digest::{Input, FixedOutput};
 
@@ -14,12 +14,11 @@ where
 pub trait Sphinx {
     type KeyLength: ArrayLength<u8>;
     type MacLength: ArrayLength<u8>;
-    type AsymmetricKey: SecretKey;
+    type AsymmetricKey: Array + SecretKey;
     type Stream: KeyStream + SeekableKeyStream;
     type Collector;
 
-    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>)
-        -> Self::Collector;
+    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Collector;
 
     fn chain<T>(collector: Self::Collector, data: T) -> Self::Collector
     where
@@ -27,23 +26,23 @@ pub trait Sphinx {
 
     fn output(collector: Self::Collector) -> GenericArray<u8, Self::MacLength>;
 
-    fn rho(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>) -> Self::Stream;
+    fn rho(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream;
 
-    fn pi(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>) -> Self::Stream;
+    fn pi(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream;
 
     fn tau(
         public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>;
+    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length>;
 
     fn blinding(
         public_key: &<Self::AsymmetricKey as SecretKey>::PublicKey,
-        shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>;
+        shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>,
+    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length>;
 }
 
 impl<A, C, D, S> Sphinx for (A, C, D, S)
 where
-    A: SecretKey,
+    A: Array + SecretKey,
     C: Mac,
     D: Default + Input + FixedOutput<OutputSize = A::Length>,
     S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
@@ -54,9 +53,7 @@ where
     type Stream = S;
     type Collector = C;
 
-    fn mu(
-        shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>,
-    ) -> Self::Collector {
+    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Collector {
         let mut collector = C::new_varkey(b"mu").unwrap();
         collector.input(shared);
         let key = collector.result().code();
@@ -76,14 +73,14 @@ where
         Mac::result(collector).code()
     }
 
-    fn rho(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>) -> Self::Stream {
+    fn rho(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream {
         let mut collector = C::new_varkey(b"rho").unwrap();
         collector.input(shared);
         let key = collector.result().code();
         S::seed(key)
     }
 
-    fn pi(shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>) -> Self::Stream {
+    fn pi(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream {
         let mut collector = C::new_varkey(b"um").unwrap();
         collector.input(shared);
         let key = collector.result().code();
@@ -92,7 +89,7 @@ where
 
     fn tau(
         public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length> {
+    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length> {
         D::default()
             .chain(&public_key.serialize()[..])
             .fixed_result()
@@ -100,8 +97,8 @@ where
 
     fn blinding(
         public_key: &<Self::AsymmetricKey as SecretKey>::PublicKey,
-        shared: &GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length>,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as SecretKey>::Length> {
+        shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>,
+    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length> {
         D::default()
             .chain(&public_key.serialize()[..])
             .chain(shared)

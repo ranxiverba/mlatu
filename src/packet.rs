@@ -68,7 +68,6 @@ where
 impl<B, L, N, P> Packet<B, L, N, P>
 where
     B: Sphinx,
-    <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
     B::AsymmetricKey: Array,
     L: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
@@ -98,7 +97,7 @@ where
             Vec::with_capacity(Path::<L, B::MacLength, N>::size()),
             Vec::with_capacity(Path::<L, B::MacLength, N>::size()),
             session_key,
-            public_key.clone(),
+            Array::from_inner(public_key.serialize()),
         );
 
         let mut route = route;
@@ -187,7 +186,7 @@ where
                 .map_err(ProcessingError::Asymmetric)?;
             let shared_secret = B::tau(temp);
             let blinding = B::blinding(&public_key, &shared_secret);
-            let next_dh_key = <B::AsymmetricKey as Array>::copy(blinding)
+            let next_dh_key = <B::AsymmetricKey as Array>::from_inner(blinding)
                 .dh(&contexts.1, &public_key)
                 .map_err(ProcessingError::Asymmetric)?;
             (shared_secret, next_dh_key)
@@ -247,7 +246,7 @@ mod serde_m {
     use super::{Packet, Path, PayloadHmac, Sphinx};
 
     use generic_array::{GenericArray, ArrayLength};
-    use abstract_cryptography::{Array, SecretKey, PublicKey};
+    use abstract_cryptography::{Array, SecretKey};
     use serde::{Serialize, Serializer, Deserialize, Deserializer};
     use std::marker::PhantomData;
     use std::fmt;
@@ -255,7 +254,6 @@ mod serde_m {
     impl<B, L, N, P> Serialize for Packet<B, L, N, P>
     where
         B: Sphinx,
-        <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
         B::AsymmetricKey: Array,
         L: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, B::MacLength>>,
@@ -279,7 +277,6 @@ mod serde_m {
     impl<'de, B, L, N, P> Deserialize<'de> for Packet<B, L, N, P>
     where
         B: Sphinx,
-        <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
         <B::AsymmetricKey as SecretKey>::Error: fmt::Display,
         B::AsymmetricKey: Array,
         L: ArrayLength<u8>,
@@ -295,7 +292,6 @@ mod serde_m {
             struct V<B, L, N, P>
             where
                 B: Sphinx,
-                <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
                 <B::AsymmetricKey as SecretKey>::Error: fmt::Display,
                 B::AsymmetricKey: Array,
                 L: ArrayLength<u8>,
@@ -308,7 +304,6 @@ mod serde_m {
             impl<'de, B, L, N, P> Visitor<'de> for V<B, L, N, P>
             where
                 B: Sphinx,
-                <B::AsymmetricKey as SecretKey>::PublicKey: Clone,
                 <B::AsymmetricKey as SecretKey>::Error: fmt::Display,
                 B::AsymmetricKey: Array,
                 L: ArrayLength<u8>,
@@ -327,7 +322,7 @@ mod serde_m {
                 {
                     let k: GenericArray<
                         u8,
-                        <<B::AsymmetricKey as SecretKey>::PublicKey as PublicKey>::Length,
+                        <<B::AsymmetricKey as SecretKey>::PublicKey as Array>::Length,
                     > = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
@@ -341,8 +336,9 @@ mod serde_m {
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
 
-                    let public_key =
-                        PublicKey::from_raw(k).map_err(|e| Error::custom(format!("{}", e)))?;
+                    let public_key = <B::AsymmetricKey as SecretKey>::check(&k)
+                        .map(|()| Array::from_inner(k))
+                        .map_err(|e| Error::custom(format!("{}", e)))?;
 
                     Ok(Packet {
                         public_key: public_key,
