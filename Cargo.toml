@@ -45,10 +45,7 @@ version = "1.5"
 
 [dependencies.serde]
 version = "1.0"
-optional = true
-
-[dependencies.serde_derive]
-version = "1.0"
+features = ["derive"]
 optional = true
 
 [dev-dependencies.tirse]
@@ -62,4 +59,4 @@ version = "0.3"
 version = "0.4"
 
 [features]
-serde-support = ["serde", "serde_derive"]
+serde-support = ["serde"]

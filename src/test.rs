@@ -79,16 +79,6 @@ use self::packet::{FullPacket, TruncatedPacket};
 #[test]
 fn packet() {
     use generic_array::typenum::{U33, U20};
-    use serde_derive::{Serialize, Deserialize};
-
-    #[derive(Serialize, Deserialize)]
-    struct Empty;
-
-    impl AsMut<[u8]> for Empty {
-        fn as_mut(&mut self) -> &mut [u8] {
-            &mut []
-        }
-    }
 
     let reference_packet = "\
                             02e90777e8702e3d587e17c8627a997b0225f4a5a5f82115f13046aab95513c6d6\
@@ -156,7 +146,7 @@ fn packet() {
     });
 
     let packet =
-        FullPacket::<U33, U20, Empty>::new(associated_data, secret_key, path, Empty).unwrap();
+        FullPacket::<U33, U20, _>::new(associated_data, secret_key, path, []).unwrap();
 
     use tirse::{DefaultBinarySerializer, WriteWrapper};
     use serde::Serialize;

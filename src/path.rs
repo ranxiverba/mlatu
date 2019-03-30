@@ -3,9 +3,6 @@ use std::ops::BitXorAssign;
 use keystream::KeyStream;
 
 #[cfg(feature = "serde-support")]
-use serde_derive::{Serialize, Deserialize};
-
-#[cfg(feature = "serde-support")]
 use serde::{Serialize, Deserialize};
 
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
