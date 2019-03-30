@@ -24,7 +24,12 @@ version = "1.0"
 version = "0.12"
 features = ["serde"]
 
-[dependencies.rand]
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+optional = true
+
+[dev-dependencies.rand]
 version = "0.4"
 
 [dev-dependencies.secp256k1]
@@ -43,20 +48,12 @@ version = "0.3"
 [dev-dependencies.either]
 version = "1.5"
 
-[dependencies.serde]
-version = "1.0"
-features = ["derive"]
-optional = true
-
 [dev-dependencies.tirse]
 version = "0.5"
 features = ["use_std"]
 
-[dependencies.hex]
+[dev-dependencies.hex]
 version = "0.3"
-
-[dependencies.log]
-version = "0.4"
 
 [features]
 serde-support = ["serde"]
