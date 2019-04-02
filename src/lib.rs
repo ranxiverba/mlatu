@@ -8,4 +8,5 @@ mod sphinx;
 mod packet;
 
 pub use self::sphinx::{Sphinx, PseudoRandomStream};
-pub use self::packet::{Packet, Processed, ProcessingError};
+pub use self::packet::{Packet, LocalStuff, Processed, ProcessingError};
+pub use generic_array;

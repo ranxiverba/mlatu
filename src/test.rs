@@ -259,7 +259,9 @@ fn path() {
     let (last, output) = secrets
         .into_iter()
         .fold(initial, |(packet, mut payloads), secret| {
-            match packet.left().unwrap().process(&[], secret).unwrap() {
+            let packet = packet.left().unwrap();
+            let local = packet.accept(secret).unwrap();
+            match packet.process(&[], &local).unwrap() {
                 Processed::Forward {
                     data: data,
                     next: next,

@@ -7,32 +7,45 @@ use keystream::SeekableKeyStream;
 use std::{fmt, error::Error};
 
 #[derive(Debug)]
-pub enum ProcessingError<A>
-where
-    A: SecretKey,
-{
-    Asymmetric(A::Error),
-    Mac,
+pub enum ProcessingError {
+    MacMismatch,
 }
 
-impl<A> fmt::Display for ProcessingError<A>
-where
-    A: SecretKey,
-    A::Error: fmt::Display,
-{
+impl fmt::Display for ProcessingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &ProcessingError::Asymmetric(ref e) => write!(f, "{}", e),
-            &ProcessingError::Mac => write!(f, "message authentication code mismatch"),
+            &ProcessingError::MacMismatch => write!(f, "message authentication code mismatch"),
         }
     }
 }
 
-impl<A> Error for ProcessingError<A>
+impl Error for ProcessingError {
+}
+
+pub struct LocalStuff<A>
 where
-    A: SecretKey + fmt::Debug + fmt::Display,
-    A::Error: fmt::Debug + fmt::Display,
+    A: SecretKey + Array,
 {
+    this_id: A::PublicKey,
+    next_id: A::PublicKey,
+    shared_secret: GenericArray<u8, <A as Array>::Length>,
+}
+
+impl<A> LocalStuff<A>
+where
+    A: SecretKey + Array,
+{
+    pub fn this_id(&self) -> &A::PublicKey {
+        &self.this_id
+    }
+
+    pub fn next_id(&self) -> &A::PublicKey {
+        &self.next_id
+    }
+
+    pub fn shared_secret(&self) -> &GenericArray<u8, <A as Array>::Length> {
+        &self.shared_secret
+    }
 }
 
 pub enum Processed<B, L, N, P>
@@ -167,35 +180,40 @@ where
         })
     }
 
+    pub fn accept(
+        &self,
+        secret_key: B::AsymmetricKey,
+    ) -> Result<LocalStuff<B::AsymmetricKey>, <B::AsymmetricKey as SecretKey>::Error> {
+        let contexts = <B::AsymmetricKey as SecretKey>::contexts();
+
+        let public_key = &self.public_key;
+        let temp = secret_key
+            .dh(&contexts.1, public_key)?;
+        let shared_secret = B::tau(temp);
+        let blinding = B::blinding(public_key, &shared_secret);
+        let next_dh_key = <B::AsymmetricKey as Array>::from_inner(blinding)
+            .dh(&contexts.1, public_key)?;
+        Ok(LocalStuff {
+            this_id: Array::from_inner(public_key.serialize()),
+            next_id: next_dh_key,
+            shared_secret: shared_secret,
+        })
+    }
+
     pub fn process<T>(
         self,
         associated_data: T,
-        secret_key: B::AsymmetricKey,
-    ) -> Result<Processed<B, L, N, P>, ProcessingError<B::AsymmetricKey>>
+        local: &LocalStuff<B::AsymmetricKey>,
+    ) -> Result<Processed<B, L, N, P>, ProcessingError>
     where
         T: AsRef<[u8]>,
     {
         use keystream::KeyStream;
 
-        let contexts = <B::AsymmetricKey as SecretKey>::contexts();
-
-        let (shared_secret, next_dh_key) = {
-            let public_key = self.public_key;
-            let temp = secret_key
-                .dh(&contexts.1, &public_key)
-                .map_err(ProcessingError::Asymmetric)?;
-            let shared_secret = B::tau(temp);
-            let blinding = B::blinding(&public_key, &shared_secret);
-            let next_dh_key = <B::AsymmetricKey as Array>::from_inner(blinding)
-                .dh(&contexts.1, &public_key)
-                .map_err(ProcessingError::Asymmetric)?;
-            (shared_secret, next_dh_key)
-        };
-
         let (mut routing_info, hmac_received, mut message) =
             (self.routing_info, self.hmac, self.message);
 
-        let mu = B::mu(&shared_secret);
+        let mu = B::mu(&local.shared_secret());
         let mu = routing_info
             .as_ref()
             .iter()
@@ -204,14 +222,14 @@ where
         let hmac = B::output(mu);
 
         if hmac_received != hmac {
-            Err(ProcessingError::Mac)
+            Err(ProcessingError::MacMismatch)
         } else {
-            let mut stream = B::rho(&shared_secret);
+            let mut stream = B::rho(&local.shared_secret());
             let mut item = routing_info.pop();
             item ^= &mut stream;
             routing_info ^= &mut stream;
 
-            let mut stream = B::pi(&shared_secret);
+            let mut stream = B::pi(&local.shared_secret());
             stream.xor_read(message.as_mut()).unwrap();
 
             let PayloadHmac {
@@ -226,7 +244,7 @@ where
                 })
             } else {
                 let next = Packet {
-                    public_key: next_dh_key,
+                    public_key: Array::from_inner(local.next_id().serialize()),
                     routing_info: routing_info,
                     hmac: item_hmac,
                     message: message,
