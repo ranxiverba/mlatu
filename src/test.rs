@@ -146,7 +146,7 @@ fn packet() {
     });
 
     let packet =
-        FullPacket::<U33, U20, _>::new(associated_data, secret_key, path, []).unwrap();
+        FullPacket::<U33, U20, _>::new(associated_data, &secret_key, path, []).unwrap();
 
     use tirse::{DefaultBinarySerializer, WriteWrapper};
     use serde::Serialize;
@@ -246,7 +246,7 @@ fn path() {
     let message = Message::random();
     let packet = TruncatedPacket::<U19, U5, Message>::new(
         &[],
-        SecretKey::new(&mut rand::thread_rng()),
+        &SecretKey::new(&mut rand::thread_rng()),
         route.into_iter(),
         message.clone(),
     )
@@ -260,7 +260,7 @@ fn path() {
         .into_iter()
         .fold(initial, |(packet, mut payloads), secret| {
             let packet = packet.left().unwrap();
-            let local = packet.accept(secret).unwrap();
+            let local = packet.accept(&secret).unwrap();
             match packet.process(&[], &local).unwrap() {
                 Processed::Forward {
                     data: data,

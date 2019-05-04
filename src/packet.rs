@@ -88,7 +88,7 @@ where
 {
     pub fn new<T, H>(
         associated_data: T,
-        session_key: B::AsymmetricKey,
+        session_key: &B::AsymmetricKey,
         route: H,
         message: P,
     ) -> Result<Self, <B::AsymmetricKey as SecretKey>::Error>
@@ -109,7 +109,7 @@ where
         let initial = (
             Vec::with_capacity(Path::<L, B::MacLength, N>::size()),
             Vec::with_capacity(Path::<L, B::MacLength, N>::size()),
-            session_key,
+            <B::AsymmetricKey as Array>::from_inner(session_key.serialize()),
             Array::from_inner(public_key.serialize()),
         );
 
@@ -182,7 +182,7 @@ where
 
     pub fn accept(
         &self,
-        secret_key: B::AsymmetricKey,
+        secret_key: &B::AsymmetricKey,
     ) -> Result<LocalStuff<B::AsymmetricKey>, <B::AsymmetricKey as SecretKey>::Error> {
         let contexts = <B::AsymmetricKey as SecretKey>::contexts();
 
