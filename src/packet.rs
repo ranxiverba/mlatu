@@ -378,7 +378,7 @@ mod serde_m {
 }
 
 mod implementations {
-    use super::{Packet, Sphinx, PayloadHmac};
+    use super::{Packet, Sphinx, PayloadHmac, LocalStuff};
     use generic_array::ArrayLength;
     use abstract_cryptography::{Array, SecretKey};
     use std::fmt;
@@ -423,5 +423,36 @@ mod implementations {
         L: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, B::MacLength>>,
         P: PartialEq + AsMut<[u8]>,
+    {}
+
+    impl<A> fmt::Debug for LocalStuff<A>
+    where
+        A: SecretKey + Array,
+        <A as SecretKey>::PublicKey: fmt::Debug,
+    {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_struct("LocalStuff")
+                .field("this_id", &self.this_id)
+                .field("next_id", &self.next_id)
+                .field("shared_secret", &self.shared_secret)
+                .finish()
+        }
+    }
+
+    impl<A> PartialEq for LocalStuff<A>
+    where
+        A: SecretKey + Array,
+        <A as SecretKey>::PublicKey: PartialEq,
+    {
+        fn eq(&self, other: &Self) -> bool {
+            self.this_id.eq(&other.this_id) && self.next_id.eq(&other.next_id) &&
+                self.shared_secret.eq(&other.shared_secret)
+        }
+    }
+
+    impl<A> Eq for LocalStuff<A>
+    where
+        A: SecretKey + Array,
+        <A as SecretKey>::PublicKey: PartialEq,
     {}
 }
