@@ -376,3 +376,52 @@ mod serde_m {
         }
     }
 }
+
+mod implementations {
+    use super::{Packet, Sphinx, PayloadHmac};
+    use generic_array::ArrayLength;
+    use abstract_cryptography::{Array, SecretKey};
+    use std::fmt;
+
+    impl<B, L, N, P> fmt::Debug for Packet<B, L, N, P>
+    where
+        B: Sphinx,
+        B::AsymmetricKey: Array,
+        <B::AsymmetricKey as SecretKey>::PublicKey: fmt::Debug,
+        L: ArrayLength<u8>,
+        N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+        P: fmt::Debug + AsMut<[u8]>,
+    {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_struct("Packet")
+                .field("public_key", &self.public_key)
+                .field("routing_info", &self.routing_info)
+                .field("hmac", &self.hmac)
+                .field("message", &self.message)
+                .finish()
+        }
+    }
+
+    impl<B, L, N, P> PartialEq for Packet<B, L, N, P>
+    where
+        B: Sphinx,
+        <B::AsymmetricKey as SecretKey>::PublicKey: PartialEq,
+        L: ArrayLength<u8>,
+        N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+        P: PartialEq + AsMut<[u8]>,
+    {
+        fn eq(&self, other: &Self) -> bool {
+            self.public_key.eq(&other.public_key) && self.routing_info.eq(&other.routing_info)
+            && self.hmac.eq(&other.hmac) && self.message.eq(&other.message)
+        }
+    }
+
+    impl<B, L, N, P> Eq for Packet<B, L, N, P>
+    where
+        B: Sphinx,
+        <B::AsymmetricKey as SecretKey>::PublicKey: PartialEq,
+        L: ArrayLength<u8>,
+        N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+        P: PartialEq + AsMut<[u8]>,
+    {}
+}

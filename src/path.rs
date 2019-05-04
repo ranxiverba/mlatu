@@ -161,3 +161,69 @@ where
         self.as_mut().iter_mut().for_each(|x| *x ^= rhs);
     }
 }
+
+mod implementations {
+    use super::{PayloadHmac, Path};
+    use generic_array::ArrayLength;
+    use std::fmt;
+
+    impl<L, M> fmt::Debug for PayloadHmac<L, M>
+    where
+        L: ArrayLength<u8>,
+        M: ArrayLength<u8>,
+    {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_struct("PayloadHmac")
+                .field("data", &self.data)
+                .field("hmac", &self.hmac)
+                .finish()
+        }
+    }
+
+    impl<L, M> PartialEq for PayloadHmac<L, M>
+    where
+        L: ArrayLength<u8>,
+        M: ArrayLength<u8>,
+    {
+        fn eq(&self, other: &Self) -> bool {
+            self.data.eq(&other.data) && self.hmac.eq(&other.hmac)
+        }
+    }
+
+    impl<L, M> Eq for PayloadHmac<L, M>
+    where
+        L: ArrayLength<u8>,
+        M: ArrayLength<u8>,
+    {}
+
+    impl<L, M, N> fmt::Debug for Path<L, M, N>
+    where
+        L: ArrayLength<u8>,
+        M: ArrayLength<u8>,
+        N: ArrayLength<PayloadHmac<L, M>>,
+    {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_list()
+                .entries(&self.raw)
+                .finish()
+        }
+    }
+
+    impl<L, M, N> PartialEq for Path<L, M, N>
+    where
+        L: ArrayLength<u8>,
+        M: ArrayLength<u8>,
+        N: ArrayLength<PayloadHmac<L, M>>,
+    {
+        fn eq(&self, other: &Self) -> bool {
+            self.raw.eq(&other.raw)
+        }
+    }
+
+    impl<L, M, N> Eq for Path<L, M, N>
+    where
+        L: ArrayLength<u8>,
+        M: ArrayLength<u8>,
+        N: ArrayLength<PayloadHmac<L, M>>,
+    {}
+}
