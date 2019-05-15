@@ -11,6 +11,8 @@ where
     fn seed(v: GenericArray<u8, T>) -> Self;
 }
 
+pub type SharedSecret<B> = GenericArray<u8, <<B as Sphinx>::AsymmetricKey as Array>::Length>;
+
 pub trait Sphinx {
     type KeyLength: ArrayLength<u8>;
     type MacLength: ArrayLength<u8>;
@@ -18,7 +20,7 @@ pub trait Sphinx {
     type Stream: KeyStream + SeekableKeyStream;
     type Collector;
 
-    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Collector;
+    fn mu(shared: &SharedSecret<Self>) -> Self::Collector;
 
     fn chain<T>(collector: Self::Collector, data: T) -> Self::Collector
     where
@@ -26,18 +28,18 @@ pub trait Sphinx {
 
     fn output(collector: Self::Collector) -> GenericArray<u8, Self::MacLength>;
 
-    fn rho(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream;
+    fn rho(shared: &SharedSecret<Self>) -> Self::Stream;
 
-    fn pi(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream;
+    fn pi(shared: &SharedSecret<Self>) -> Self::Stream;
 
     fn tau(
         public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length>;
+    ) -> SharedSecret<Self>;
 
     fn blinding(
         public_key: &<Self::AsymmetricKey as SecretKey>::PublicKey,
-        shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length>;
+        shared: &SharedSecret<Self>,
+    ) -> SharedSecret<Self>;
 }
 
 impl<A, C, D, S> Sphinx for (A, C, D, S)
@@ -53,7 +55,7 @@ where
     type Stream = S;
     type Collector = C;
 
-    fn mu(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Collector {
+    fn mu(shared: &SharedSecret<Self>) -> Self::Collector {
         let mut collector = C::new_varkey(b"mu").unwrap();
         collector.input(shared);
         let key = collector.result().code();
@@ -73,14 +75,14 @@ where
         Mac::result(collector).code()
     }
 
-    fn rho(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream {
+    fn rho(shared: &SharedSecret<Self>) -> Self::Stream {
         let mut collector = C::new_varkey(b"rho").unwrap();
         collector.input(shared);
         let key = collector.result().code();
         S::seed(key)
     }
 
-    fn pi(shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>) -> Self::Stream {
+    fn pi(shared: &SharedSecret<Self>) -> Self::Stream {
         let mut collector = C::new_varkey(b"um").unwrap();
         collector.input(shared);
         let key = collector.result().code();
@@ -89,7 +91,7 @@ where
 
     fn tau(
         public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length> {
+    ) -> SharedSecret<Self> {
         D::default()
             .chain(&public_key.serialize()[..])
             .fixed_result()
@@ -97,8 +99,8 @@ where
 
     fn blinding(
         public_key: &<Self::AsymmetricKey as SecretKey>::PublicKey,
-        shared: &GenericArray<u8, <Self::AsymmetricKey as Array>::Length>,
-    ) -> GenericArray<u8, <Self::AsymmetricKey as Array>::Length> {
+        shared: &SharedSecret<Self>,
+    ) -> SharedSecret<Self> {
         D::default()
             .chain(&public_key.serialize()[..])
             .chain(shared)

@@ -1,5 +1,5 @@
 use super::path::{PayloadHmac, Path};
-use super::sphinx::Sphinx;
+use super::sphinx::{Sphinx, SharedSecret};
 
 use generic_array::{GenericArray, ArrayLength};
 use abstract_cryptography::{Array, SecretKey};
@@ -78,12 +78,38 @@ where
     message: P,
 }
 
+pub struct PathItem<A, L>
+where
+    A: Array + SecretKey,
+    L: ArrayLength<u8>,
+{
+    public_key: A::PublicKey,
+    payload: GenericArray<u8, L>,
+}
+
+impl<A, L> PathItem<A, L>
+where
+    A: Array + SecretKey,
+    L: ArrayLength<u8>,
+{
+    pub fn new(public_key: A::PublicKey, payload: GenericArray<u8, L>) -> Self {
+        PathItem {
+            public_key: public_key,
+            payload: payload,
+        }
+    }
+
+    pub fn payload(&self) -> &GenericArray<u8, L> {
+        &self.payload
+    }
+}
+
 impl<B, L, N, P> Packet<B, L, N, P>
 where
     B: Sphinx,
     B::AsymmetricKey: Array,
     L: ArrayLength<u8>,
-    N: ArrayLength<PayloadHmac<L, B::MacLength>>,
+    N: ArrayLength<PayloadHmac<L, B::MacLength>> + ArrayLength<SharedSecret<B>>,
     P: AsMut<[u8]>,
 {
     pub fn new<T, H>(
@@ -91,15 +117,10 @@ where
         session_key: &B::AsymmetricKey,
         route: H,
         message: P,
-    ) -> Result<Self, <B::AsymmetricKey as SecretKey>::Error>
+    ) -> Result<(Self, GenericArray<SharedSecret<B>, N>), <B::AsymmetricKey as SecretKey>::Error>
     where
         T: AsRef<[u8]>,
-        H: Iterator<
-            Item = (
-                <B::AsymmetricKey as SecretKey>::PublicKey,
-                GenericArray<u8, L>,
-            ),
-        >,
+        H: Iterator<Item = PathItem<B::AsymmetricKey, L>>,
     {
         use keystream::KeyStream;
 
@@ -117,7 +138,11 @@ where
         let (shared_secrets, payloads) = route
             .try_fold(
                 initial,
-                |(mut s, mut p, mut secret, public), (path_point, payload)| {
+                |(mut s, mut p, mut secret, public), item| {
+                    let PathItem {
+                        public_key: path_point,
+                        payload: payload,
+                    } = item;
                     let temp = secret.dh(&contexts.1, &path_point)?;
                     let result = B::tau(temp);
                     let blinding = B::blinding(&public, &result);
@@ -172,12 +197,14 @@ where
                 hmac = B::output(mu);
             });
 
-        Ok(Packet {
+        let mut shared_secrets_array = GenericArray::default();
+        shared_secrets_array[0..length].clone_from_slice(shared_secrets.as_slice());
+        Ok((Packet {
             public_key: public_key,
             routing_info: routing_info,
             hmac: hmac,
             message: message,
-        })
+        }, shared_secrets_array))
     }
 
     pub fn accept(
