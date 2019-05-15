@@ -19,8 +19,7 @@ impl fmt::Display for ProcessingError {
     }
 }
 
-impl Error for ProcessingError {
-}
+impl Error for ProcessingError {}
 
 pub struct LocalStuff<A>
 where
@@ -136,24 +135,21 @@ where
 
         let mut route = route;
         let (shared_secrets, payloads) = route
-            .try_fold(
-                initial,
-                |(mut s, mut p, mut secret, public), item| {
-                    let PathItem {
-                        public_key: path_point,
-                        payload: payload,
-                    } = item;
-                    let temp = secret.dh(&contexts.1, &path_point)?;
-                    let result = B::tau(temp);
-                    let blinding = B::blinding(&public, &result);
-                    secret.mul_assign(&blinding)?;
-                    let public = secret.paired(&contexts.0);
+            .try_fold(initial, |(mut s, mut p, mut secret, public), item| {
+                let PathItem {
+                    public_key: path_point,
+                    payload: payload,
+                } = item;
+                let temp = secret.dh(&contexts.1, &path_point)?;
+                let result = B::tau(temp);
+                let blinding = B::blinding(&public, &result);
+                secret.mul_assign(&blinding)?;
+                let public = secret.paired(&contexts.0);
 
-                    s.push(result);
-                    p.push(payload);
-                    Ok((s, p, secret, public))
-                },
-            )
+                s.push(result);
+                p.push(payload);
+                Ok((s, p, secret, public))
+            })
             .map(|(s, p, _, _)| (s, p))?;
 
         let mut hmac = GenericArray::default();
@@ -199,12 +195,15 @@ where
 
         let mut shared_secrets_array = GenericArray::default();
         shared_secrets_array[0..length].clone_from_slice(shared_secrets.as_slice());
-        Ok((Packet {
-            public_key: public_key,
-            routing_info: routing_info,
-            hmac: hmac,
-            message: message,
-        }, shared_secrets_array))
+        Ok((
+            Packet {
+                public_key: public_key,
+                routing_info: routing_info,
+                hmac: hmac,
+                message: message,
+            },
+            shared_secrets_array,
+        ))
     }
 
     pub fn accept(
@@ -214,12 +213,11 @@ where
         let contexts = <B::AsymmetricKey as SecretKey>::contexts();
 
         let public_key = &self.public_key;
-        let temp = secret_key
-            .dh(&contexts.1, public_key)?;
+        let temp = secret_key.dh(&contexts.1, public_key)?;
         let shared_secret = B::tau(temp);
         let blinding = B::blinding(public_key, &shared_secret);
-        let next_dh_key = <B::AsymmetricKey as Array>::from_inner(blinding)
-            .dh(&contexts.1, public_key)?;
+        let next_dh_key =
+            <B::AsymmetricKey as Array>::from_inner(blinding).dh(&contexts.1, public_key)?;
         Ok(LocalStuff {
             this_id: Array::from_inner(public_key.serialize()),
             next_id: next_dh_key,
@@ -438,8 +436,10 @@ mod implementations {
         P: PartialEq + AsMut<[u8]>,
     {
         fn eq(&self, other: &Self) -> bool {
-            self.public_key.eq(&other.public_key) && self.routing_info.eq(&other.routing_info)
-            && self.hmac.eq(&other.hmac) && self.message.eq(&other.message)
+            self.public_key.eq(&other.public_key)
+                && self.routing_info.eq(&other.routing_info)
+                && self.hmac.eq(&other.hmac)
+                && self.message.eq(&other.message)
         }
     }
 
@@ -450,7 +450,8 @@ mod implementations {
         L: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, B::MacLength>>,
         P: PartialEq + AsMut<[u8]>,
-    {}
+    {
+    }
 
     impl<A> fmt::Debug for LocalStuff<A>
     where
@@ -472,8 +473,9 @@ mod implementations {
         <A as SecretKey>::PublicKey: PartialEq,
     {
         fn eq(&self, other: &Self) -> bool {
-            self.this_id.eq(&other.this_id) && self.next_id.eq(&other.next_id) &&
-                self.shared_secret.eq(&other.shared_secret)
+            self.this_id.eq(&other.this_id)
+                && self.next_id.eq(&other.next_id)
+                && self.shared_secret.eq(&other.shared_secret)
         }
     }
 
@@ -481,5 +483,6 @@ mod implementations {
     where
         A: SecretKey + Array,
         <A as SecretKey>::PublicKey: PartialEq,
-    {}
+    {
+    }
 }

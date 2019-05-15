@@ -9,7 +9,10 @@ mod packet {
     use hmac::Hmac;
     use secp256k1::SecretKey;
     use digest::{Input, BlockInput, FixedOutput, Reset};
-    use generic_array::{GenericArray, typenum::{U16, U32}};
+    use generic_array::{
+        GenericArray,
+        typenum::{U16, U32},
+    };
 
     pub type FullPacket<L, N, P> = Packet<(SecretKey, Hmac<Sha256>, Sha256, ChaCha), L, N, P>;
     pub type TruncatedPacket<L, N, P> =

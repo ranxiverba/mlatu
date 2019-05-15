@@ -194,7 +194,8 @@ mod implementations {
     where
         L: ArrayLength<u8>,
         M: ArrayLength<u8>,
-    {}
+    {
+    }
 
     impl<L, M, N> fmt::Debug for Path<L, M, N>
     where
@@ -203,9 +204,7 @@ mod implementations {
         N: ArrayLength<PayloadHmac<L, M>>,
     {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.debug_list()
-                .entries(&self.raw)
-                .finish()
+            f.debug_list().entries(&self.raw).finish()
         }
     }
 
@@ -225,5 +224,6 @@ mod implementations {
         L: ArrayLength<u8>,
         M: ArrayLength<u8>,
         N: ArrayLength<PayloadHmac<L, M>>,
-    {}
+    {
+    }
 }
