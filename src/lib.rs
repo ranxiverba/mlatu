@@ -9,5 +9,5 @@ mod sphinx;
 mod packet;
 
 pub use self::sphinx::{SharedSecret, Sphinx, PseudoRandomStream};
-pub use self::packet::{Packet, PathItem, LocalStuff, Processed, ProcessingError};
+pub use self::packet::{Packet, LocalStuff, Processed, ProcessingError};
 pub use generic_array;

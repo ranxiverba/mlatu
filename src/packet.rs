@@ -77,32 +77,6 @@ where
     message: P,
 }
 
-pub struct PathItem<A, L>
-where
-    A: Array + SecretKey,
-    L: ArrayLength<u8>,
-{
-    public_key: A::PublicKey,
-    payload: GenericArray<u8, L>,
-}
-
-impl<A, L> PathItem<A, L>
-where
-    A: Array + SecretKey,
-    L: ArrayLength<u8>,
-{
-    pub fn new(public_key: A::PublicKey, payload: GenericArray<u8, L>) -> Self {
-        PathItem {
-            public_key: public_key,
-            payload: payload,
-        }
-    }
-
-    pub fn payload(&self) -> &GenericArray<u8, L> {
-        &self.payload
-    }
-}
-
 impl<B, L, N, P> Packet<B, L, N, P>
 where
     B: Sphinx,
@@ -111,35 +85,25 @@ where
     N: ArrayLength<PayloadHmac<L, B::MacLength>> + ArrayLength<SharedSecret<B>>,
     P: AsMut<[u8]>,
 {
-    pub fn new<T, H>(
-        associated_data: T,
+    pub fn data<H>(
         session_key: &B::AsymmetricKey,
-        route: H,
-        message: P,
-    ) -> Result<(Self, GenericArray<SharedSecret<B>, N>), <B::AsymmetricKey as SecretKey>::Error>
+        path: H,
+    ) -> Result<(GenericArray<SharedSecret<B>, N>, <B::AsymmetricKey as SecretKey>::PublicKey), <B::AsymmetricKey as SecretKey>::Error>
     where
-        T: AsRef<[u8]>,
-        H: Iterator<Item = PathItem<B::AsymmetricKey, L>>,
+        H: Iterator<Item = <B::AsymmetricKey as SecretKey>::PublicKey>,
     {
-        use keystream::KeyStream;
-
         let contexts = <B::AsymmetricKey as SecretKey>::contexts();
         let public_key = session_key.paired(&contexts.0);
 
         let initial = (
             Vec::with_capacity(Path::<L, B::MacLength, N>::size()),
-            Vec::with_capacity(Path::<L, B::MacLength, N>::size()),
             <B::AsymmetricKey as Array>::from_inner(session_key.serialize()),
             Array::from_inner(public_key.serialize()),
         );
 
-        let mut route = route;
-        let (shared_secrets, payloads) = route
-            .try_fold(initial, |(mut s, mut p, mut secret, public), item| {
-                let PathItem {
-                    public_key: path_point,
-                    payload: payload,
-                } = item;
+        let mut path = path;
+        let shared_secrets = path
+            .try_fold(initial, |(mut s, mut secret, public), path_point| {
                 let temp = secret.dh(&contexts.1, &path_point)?;
                 let result = B::tau(temp);
                 let blinding = B::blinding(&public, &result);
@@ -147,16 +111,33 @@ where
                 let public = secret.paired(&contexts.0);
 
                 s.push(result);
-                p.push(payload);
-                Ok((s, p, secret, public))
+                Ok((s, secret, public))
             })
-            .map(|(s, p, _, _)| (s, p))?;
+            .map(|(s, _, _)| s)?;
 
+        let mut shared_secrets_array = GenericArray::default();
+        shared_secrets_array[0..shared_secrets.len()].clone_from_slice(shared_secrets.as_slice());
+        Ok((shared_secrets_array, public_key))
+    }
+
+    pub fn new<T, H>(
+        data: (GenericArray<SharedSecret<B>, N>, <B::AsymmetricKey as SecretKey>::PublicKey),
+        associated_data: T,
+        payloads: H,
+        message: P,
+    ) -> Result<Self, <B::AsymmetricKey as SecretKey>::Error>
+    where
+        T: AsRef<[u8]>,
+        H: Iterator<Item = GenericArray<u8, L>> + DoubleEndedIterator + ExactSizeIterator,
+    {
+        use keystream::KeyStream;
+
+        let (shared_secrets, public_key) = data;
         let mut hmac = GenericArray::default();
         let mut routing_info = Path::<L, B::MacLength, N>::new();
         let mut message = message;
 
-        let length = shared_secrets.len();
+        let length = payloads.len();
         for i in 0..length {
             let mut s = B::rho(&shared_secrets[i]);
             let size = PayloadHmac::<L, B::MacLength>::size();
@@ -169,7 +150,6 @@ where
         }
 
         payloads
-            .into_iter()
             .enumerate()
             .rev()
             .for_each(|(index, payload)| {
@@ -193,17 +173,12 @@ where
                 hmac = B::output(mu);
             });
 
-        let mut shared_secrets_array = GenericArray::default();
-        shared_secrets_array[0..length].clone_from_slice(shared_secrets.as_slice());
-        Ok((
-            Packet {
-                public_key: public_key,
-                routing_info: routing_info,
-                hmac: hmac,
-                message: message,
-            },
-            shared_secrets_array,
-        ))
+        Ok(Packet {
+            public_key: public_key,
+            routing_info: routing_info,
+            hmac: hmac,
+            message: message,
+        })
     }
 
     pub fn accept(

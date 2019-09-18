@@ -1,6 +1,6 @@
 use generic_array::GenericArray;
 use secp256k1::{PublicKey, SecretKey};
-use super::{Processed, PathItem};
+use super::Processed;
 
 mod packet {
     use super::super::{PseudoRandomStream, Packet};
@@ -138,18 +138,21 @@ fn packet() {
 
     let secret_key = SecretKey::from_slice(secret_key_text.as_bytes()).unwrap();
     let associated_data = associated_data_text.as_bytes().to_vec();
-    let path = public_keys_texts.iter().enumerate().map(|(i, &d)| {
-        let pk = PublicKey::from_slice(hex::decode(d).unwrap().as_slice()).unwrap();
-        let x = i as u8;
-        let payload = GenericArray::clone_from_slice(&[
-            0, x, x, x, x, x, x, x, x, 0, 0, 0, 0, 0, 0, 0, x, 0, 0, 0, x, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0,
-        ]);
-        PathItem::new(pk, payload)
-    });
+    let path = public_keys_texts.iter()
+        .map(|&d| PublicKey::from_slice(hex::decode(d).unwrap().as_slice()).unwrap());
 
-    let (packet, _) =
-        FullPacket::<U33, U20, _>::new(associated_data, &secret_key, path, []).unwrap();
+    let payloads = (0..public_keys_texts.len())
+        .map(|i| {
+            let x = i as u8;
+            GenericArray::clone_from_slice(&[
+                0, x, x, x, x, x, x, x, x, 0, 0, 0, 0, 0, 0, 0, x, 0, 0, 0, x, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+            ])
+        })
+        .collect::<Vec<_>>().into_iter();
+
+    let data = FullPacket::<U33, U20, Vec<u8>>::data(&secret_key, path).unwrap();
+    let packet = FullPacket::<U33, U20, _>::new(data, associated_data, payloads, []).unwrap();
 
     use tirse::{DefaultBinarySerializer, WriteWrapper};
     use serde::Serialize;
@@ -228,29 +231,26 @@ fn path() {
 
     let context = Secp256k1::new();
 
-    let (secrets, route): (Vec<SecretKey>, Vec<PathItem<SecretKey, _>>) = (0..4)
+    let (secrets, path): (Vec<SecretKey>, Vec<PublicKey>) = (0..4)
         .map(|_| {
             let secret = SecretKey::new(&mut rand::thread_rng());
             let public = PublicKey::from_secret_key(&context, &secret);
-            let payload = GenericArray::<u8, _>::generate(|_| rand::random());
-            let item = PathItem::new(public, payload);
-            (secret, item)
+            (secret, public)
         })
         .unzip();
 
-    let payloads = route
-        .iter()
-        .map(|item| {
-            dbg!(hex::encode(item.payload()));
-            item.payload().clone()
-        })
+    let payloads = (0..4)
+        .map(|_| GenericArray::generate(|_| rand::random::<u8>()))
         .collect::<Vec<_>>();
 
     let message = Message::random();
-    let (packet, _) = TruncatedPacket::<U19, U5, Message>::new(
+
+    let secret = SecretKey::new(&mut rand::thread_rng());
+    let data = TruncatedPacket::<U19, U5, Message>::data(&secret, path.into_iter()).unwrap();
+    let packet = TruncatedPacket::<U19, U5, Message>::new(
+        data,
         &[],
-        &SecretKey::new(&mut rand::thread_rng()),
-        route.into_iter(),
+        payloads.clone().into_iter(),
         message.clone(),
     )
     .unwrap();
