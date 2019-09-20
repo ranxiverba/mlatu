@@ -30,6 +30,15 @@ where
     pub shared_secret: GenericArray<u8, <A as Array>::Length>,
 }
 
+pub struct GlobalData<A, N>
+where
+    A: SecretKey + Array,
+    N: ArrayLength<SharedSecret<A>>,
+{
+    pub id: A::PublicKey,
+    pub shared_secrets: GenericArray<SharedSecret<A>, N>,
+}
+
 pub enum Processed<B, L, N, P>
 where
     B: Sphinx,
@@ -71,7 +80,7 @@ where
     pub fn data<H>(
         session_key: &B::AsymmetricKey,
         path: H,
-    ) -> Result<(GenericArray<SharedSecret<B::AsymmetricKey>, N>, <B::AsymmetricKey as SecretKey>::PublicKey), <B::AsymmetricKey as SecretKey>::Error>
+    ) -> Result<GlobalData<B::AsymmetricKey, N>, <B::AsymmetricKey as SecretKey>::Error>
     where
         H: Iterator<Item = <B::AsymmetricKey as SecretKey>::PublicKey>,
     {
@@ -100,11 +109,15 @@ where
 
         let mut shared_secrets_array = GenericArray::default();
         shared_secrets_array[0..shared_secrets.len()].clone_from_slice(shared_secrets.as_slice());
-        Ok((shared_secrets_array, public_key))
+        let data = GlobalData {
+            shared_secrets: shared_secrets_array,
+            id: public_key,
+        };
+        Ok(data)
     }
 
     pub fn new<T, H>(
-        data: (GenericArray<SharedSecret<B::AsymmetricKey>, N>, <B::AsymmetricKey as SecretKey>::PublicKey),
+        data: GlobalData<B::AsymmetricKey, N>,
         associated_data: T,
         payloads: H,
         message: P,
@@ -115,7 +128,10 @@ where
     {
         use keystream::KeyStream;
 
-        let (shared_secrets, public_key) = data;
+        let GlobalData {
+            shared_secrets: shared_secrets,
+            id: public_key,
+        } = data;
         let mut hmac = GenericArray::default();
         let mut routing_info = Path::<L, B::MacLength, N>::new();
         let mut message = message;
