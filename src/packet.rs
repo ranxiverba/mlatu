@@ -2,24 +2,8 @@ use super::path::{PayloadHmac, Path};
 use super::sphinx::{Sphinx, SharedSecret};
 
 use generic_array::{GenericArray, ArrayLength};
-use abstract_cryptography::{Array, SecretKey};
+use abstract_cryptography::{Array, SecretKey, TagError};
 use keystream::SeekableKeyStream;
-use std::{fmt, error::Error};
-
-#[derive(Debug)]
-pub enum ProcessingError {
-    MacMismatch,
-}
-
-impl fmt::Display for ProcessingError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &ProcessingError::MacMismatch => write!(f, "message authentication code mismatch"),
-        }
-    }
-}
-
-impl Error for ProcessingError {}
 
 pub struct LocalData<A>
 where
@@ -190,7 +174,7 @@ where
         self,
         associated_data: T,
         local: &LocalData<B::AsymmetricKey>,
-    ) -> Result<Processed<B, L, N, P>, ProcessingError>
+    ) -> Result<Processed<B, L, N, P>, TagError>
     where
         T: AsRef<[u8]>,
     {
@@ -208,7 +192,7 @@ where
         let hmac = B::output(mu);
 
         if hmac_received != hmac {
-            Err(ProcessingError::MacMismatch)
+            Err(TagError)
         } else {
             let mut stream = B::rho(&local.shared_secret);
             let mut item = routing_info.pop();
