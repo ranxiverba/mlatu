@@ -32,7 +32,9 @@ pub trait Sphinx {
 
     fn pi(shared: &SharedSecret<Self::AsymmetricKey>) -> Self::Stream;
 
-    fn tau(public_key: <Self::AsymmetricKey as SecretKey>::PublicKey) -> SharedSecret<Self::AsymmetricKey>;
+    fn tau(
+        public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
+    ) -> SharedSecret<Self::AsymmetricKey>;
 
     fn blinding(
         public_key: &<Self::AsymmetricKey as SecretKey>::PublicKey,
@@ -87,7 +89,9 @@ where
         S::seed(key)
     }
 
-    fn tau(public_key: <Self::AsymmetricKey as SecretKey>::PublicKey) -> SharedSecret<Self::AsymmetricKey> {
+    fn tau(
+        public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
+    ) -> SharedSecret<Self::AsymmetricKey> {
         D::default()
             .chain(&public_key.serialize()[..])
             .fixed_result()

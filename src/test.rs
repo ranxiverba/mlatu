@@ -138,7 +138,8 @@ fn packet() {
 
     let secret_key = SecretKey::from_slice(secret_key_text.as_bytes()).unwrap();
     let associated_data = associated_data_text.as_bytes().to_vec();
-    let path = public_keys_texts.iter()
+    let path = public_keys_texts
+        .iter()
         .map(|&d| PublicKey::from_slice(hex::decode(d).unwrap().as_slice()).unwrap());
 
     let payloads = (0..public_keys_texts.len())
@@ -149,7 +150,8 @@ fn packet() {
                 0, 0, 0, 0, 0,
             ])
         })
-        .collect::<Vec<_>>().into_iter();
+        .collect::<Vec<_>>()
+        .into_iter();
 
     let data = FullPacket::<U33, U20, Vec<u8>>::data(&secret_key, path).unwrap();
     let packet = FullPacket::<U33, U20, _>::new(data, associated_data, payloads, []).unwrap();

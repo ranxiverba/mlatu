@@ -148,29 +148,26 @@ where
                 .for_each(|x| *x ^= &mut s);
         }
 
-        payloads
-            .enumerate()
-            .rev()
-            .for_each(|(index, payload)| {
-                routing_info.push(PayloadHmac {
-                    data: payload,
-                    hmac: hmac.clone(),
-                });
-
-                let mut stream = B::rho(&shared_secrets[index]);
-                routing_info ^= &mut stream;
-
-                let mut stream = B::pi(&shared_secrets[index]);
-                stream.xor_read(message.as_mut()).unwrap();
-
-                let mu = B::mu(&shared_secrets[index]);
-                let mu = routing_info
-                    .as_ref()
-                    .iter()
-                    .fold(mu, |mu, hop| B::chain(B::chain(mu, &hop.data), &hop.hmac));
-                let mu = B::chain(mu, associated_data.as_ref());
-                hmac = B::output(mu);
+        payloads.enumerate().rev().for_each(|(index, payload)| {
+            routing_info.push(PayloadHmac {
+                data: payload,
+                hmac: hmac.clone(),
             });
+
+            let mut stream = B::rho(&shared_secrets[index]);
+            routing_info ^= &mut stream;
+
+            let mut stream = B::pi(&shared_secrets[index]);
+            stream.xor_read(message.as_mut()).unwrap();
+
+            let mu = B::mu(&shared_secrets[index]);
+            let mu = routing_info
+                .as_ref()
+                .iter()
+                .fold(mu, |mu, hop| B::chain(B::chain(mu, &hop.data), &hop.hmac));
+            let mu = B::chain(mu, associated_data.as_ref());
+            hmac = B::output(mu);
+        });
 
         Ok(Packet {
             public_key: public_key,
