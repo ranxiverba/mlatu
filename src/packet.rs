@@ -27,7 +27,29 @@ where
 {
     pub this_id: A::PublicKey,
     pub next_id: A::PublicKey,
-    pub shared_secret: GenericArray<u8, <A as Array>::Length>,
+    pub shared_secret: GenericArray<u8, A::Length>,
+}
+
+impl<A> LocalData<A>
+where
+    A: SecretKey + Array,
+{
+    pub fn new<B>(local_secret_key: &A, public_key: &A::PublicKey) -> Result<Self, A::Error>
+    where
+        B: Sphinx<AsymmetricKey = A>,
+    {
+        let contexts = A::contexts();
+
+        let temp = local_secret_key.dh(&contexts.1, public_key)?;
+        let shared_secret = B::tau(temp);
+        let blinding = B::blinding(public_key, &shared_secret);
+        let next_dh_key = A::from_inner(blinding).dh(&contexts.1, public_key)?;
+        Ok(LocalData {
+            this_id: Array::from_inner(public_key.serialize()),
+            next_id: next_dh_key,
+            shared_secret: shared_secret,
+        })
+    }
 }
 
 pub struct GlobalData<A, N>
@@ -35,8 +57,50 @@ where
     A: SecretKey + Array,
     N: ArrayLength<SharedSecret<A>>,
 {
-    pub id: A::PublicKey,
+    pub public_key: A::PublicKey,
     pub shared_secrets: GenericArray<SharedSecret<A>, N>,
+}
+
+impl<A, N> GlobalData<A, N>
+where
+    A: SecretKey + Array,
+    N: ArrayLength<SharedSecret<A>>,
+{
+    pub fn new<H, B>(session_key: &A, path: H) -> Result<Self, A::Error>
+    where
+        H: Iterator<Item = <B::AsymmetricKey as SecretKey>::PublicKey>,
+        B: Sphinx<AsymmetricKey = A>,
+    {
+        let contexts = A::contexts();
+        let public_key = session_key.paired(&contexts.0);
+
+        let initial = (
+            Vec::with_capacity(N::to_usize()),
+            A::from_inner(session_key.serialize()),
+            Array::from_inner(public_key.serialize()),
+        );
+
+        let mut path = path;
+        let shared_secrets = path
+            .try_fold(initial, |(mut s, mut secret, public), path_point| {
+                let temp = secret.dh(&contexts.1, &path_point)?;
+                let result = B::tau(temp);
+                let blinding = B::blinding(&public, &result);
+                secret.mul_assign(&blinding)?;
+                let public = secret.paired(&contexts.0);
+
+                s.push(result);
+                Ok((s, secret, public))
+            })
+            .map(|(s, _, _)| s)?;
+
+        let mut shared_secrets_array = GenericArray::default();
+        shared_secrets_array[0..shared_secrets.len()].clone_from_slice(shared_secrets.as_slice());
+        Ok(GlobalData {
+            shared_secrets: shared_secrets_array,
+            public_key: public_key,
+        })
+    }
 }
 
 pub enum Processed<B, L, N, P>
@@ -63,7 +127,7 @@ where
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
     P: AsMut<[u8]>,
 {
-    public_key: <B::AsymmetricKey as SecretKey>::PublicKey,
+    pub public_key: <B::AsymmetricKey as SecretKey>::PublicKey,
     routing_info: Path<L, B::MacLength, N>,
     hmac: GenericArray<u8, B::MacLength>,
     message: P,
@@ -77,45 +141,6 @@ where
     N: ArrayLength<PayloadHmac<L, B::MacLength>> + ArrayLength<SharedSecret<B::AsymmetricKey>>,
     P: AsMut<[u8]>,
 {
-    pub fn data<H>(
-        session_key: &B::AsymmetricKey,
-        path: H,
-    ) -> Result<GlobalData<B::AsymmetricKey, N>, <B::AsymmetricKey as SecretKey>::Error>
-    where
-        H: Iterator<Item = <B::AsymmetricKey as SecretKey>::PublicKey>,
-    {
-        let contexts = <B::AsymmetricKey as SecretKey>::contexts();
-        let public_key = session_key.paired(&contexts.0);
-
-        let initial = (
-            Vec::with_capacity(Path::<L, B::MacLength, N>::size()),
-            <B::AsymmetricKey as Array>::from_inner(session_key.serialize()),
-            Array::from_inner(public_key.serialize()),
-        );
-
-        let mut path = path;
-        let shared_secrets = path
-            .try_fold(initial, |(mut s, mut secret, public), path_point| {
-                let temp = secret.dh(&contexts.1, &path_point)?;
-                let result = B::tau(temp);
-                let blinding = B::blinding(&public, &result);
-                secret.mul_assign(&blinding)?;
-                let public = secret.paired(&contexts.0);
-
-                s.push(result);
-                Ok((s, secret, public))
-            })
-            .map(|(s, _, _)| s)?;
-
-        let mut shared_secrets_array = GenericArray::default();
-        shared_secrets_array[0..shared_secrets.len()].clone_from_slice(shared_secrets.as_slice());
-        let data = GlobalData {
-            shared_secrets: shared_secrets_array,
-            id: public_key,
-        };
-        Ok(data)
-    }
-
     pub fn new<T, H>(
         data: GlobalData<B::AsymmetricKey, N>,
         associated_data: T,
@@ -130,7 +155,7 @@ where
 
         let GlobalData {
             shared_secrets: shared_secrets,
-            id: public_key,
+            public_key: public_key,
         } = data;
         let mut hmac = GenericArray::default();
         let mut routing_info = Path::<L, B::MacLength, N>::new();
@@ -174,25 +199,6 @@ where
             routing_info: routing_info,
             hmac: hmac,
             message: message,
-        })
-    }
-
-    pub fn accept(
-        &self,
-        secret_key: &B::AsymmetricKey,
-    ) -> Result<LocalData<B::AsymmetricKey>, <B::AsymmetricKey as SecretKey>::Error> {
-        let contexts = <B::AsymmetricKey as SecretKey>::contexts();
-
-        let public_key = &self.public_key;
-        let temp = secret_key.dh(&contexts.1, public_key)?;
-        let shared_secret = B::tau(temp);
-        let blinding = B::blinding(public_key, &shared_secret);
-        let next_dh_key =
-            <B::AsymmetricKey as Array>::from_inner(blinding).dh(&contexts.1, public_key)?;
-        Ok(LocalData {
-            this_id: Array::from_inner(public_key.serialize()),
-            next_id: next_dh_key,
-            shared_secret: shared_secret,
         })
     }
 

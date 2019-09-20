@@ -14,9 +14,10 @@ mod packet {
         typenum::{U16, U32},
     };
 
-    pub type FullPacket<L, N, P> = Packet<(SecretKey, Hmac<Sha256>, Sha256, ChaCha), L, N, P>;
-    pub type TruncatedPacket<L, N, P> =
-        Packet<(SecretKey, Hmac<TruncatedSha256>, Sha256, ChaCha), L, N, P>;
+    pub type FullSphinx = (SecretKey, Hmac<Sha256>, Sha256, ChaCha);
+    pub type FullPacket<L, N, P> = Packet<FullSphinx, L, N, P>;
+    pub type TruncatedSphinx = (SecretKey, Hmac<TruncatedSha256>, Sha256, ChaCha);
+    pub type TruncatedPacket<L, N, P> = Packet<TruncatedSphinx, L, N, P>;
 
     impl PseudoRandomStream<U16> for ChaCha {
         fn seed(v: GenericArray<u8, U16>) -> Self {
@@ -77,10 +78,11 @@ mod packet {
     }
 }
 
-use self::packet::{FullPacket, TruncatedPacket};
+use self::packet::{FullSphinx, FullPacket, TruncatedSphinx, TruncatedPacket};
 
 #[test]
 fn packet() {
+    use super::GlobalData;
     use generic_array::typenum::{U33, U20};
 
     let reference_packet = "\
@@ -153,7 +155,7 @@ fn packet() {
         .collect::<Vec<_>>()
         .into_iter();
 
-    let data = FullPacket::<U33, U20, Vec<u8>>::data(&secret_key, path).unwrap();
+    let data = GlobalData::new::<_, FullSphinx>(&secret_key, path).unwrap();
     let packet = FullPacket::<U33, U20, _>::new(data, associated_data, payloads, []).unwrap();
 
     use tirse::{DefaultBinarySerializer, WriteWrapper};
@@ -167,6 +169,7 @@ fn packet() {
 
 #[test]
 fn path() {
+    use super::{LocalData, GlobalData};
     use generic_array::typenum::{U19, U5};
     use generic_array::sequence::GenericSequence;
     use secp256k1::Secp256k1;
@@ -248,7 +251,7 @@ fn path() {
     let message = Message::random();
 
     let secret = SecretKey::new(&mut rand::thread_rng());
-    let data = TruncatedPacket::<U19, U5, Message>::data(&secret, path.into_iter()).unwrap();
+    let data = GlobalData::new::<_, TruncatedSphinx>(&secret, path.into_iter()).unwrap();
     let packet = TruncatedPacket::<U19, U5, Message>::new(
         data,
         &[],
@@ -265,7 +268,7 @@ fn path() {
         .into_iter()
         .fold(initial, |(packet, mut payloads), secret| {
             let packet = packet.left().unwrap();
-            let local = packet.accept(&secret).unwrap();
+            let local = LocalData::new::<TruncatedSphinx>(&secret, &packet.public_key).unwrap();
             match packet.process(&[], &local).unwrap() {
                 Processed::Forward {
                     data: data,
