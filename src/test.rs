@@ -3,7 +3,7 @@ use secp256k1::{PublicKey, SecretKey};
 use super::Processed;
 
 mod packet {
-    use super::super::{PseudoRandomStream, Packet};
+    use super::super::{PseudoRandomStream, AuthenticatedMessage};
     use sha2::Sha256;
     use chacha::ChaCha;
     use hmac::Hmac;
@@ -15,9 +15,9 @@ mod packet {
     };
 
     pub type FullSphinx = (SecretKey, Hmac<Sha256>, Sha256, ChaCha);
-    pub type FullPacket<L, N, P> = Packet<FullSphinx, L, N, P>;
+    pub type FullPacket<L, N, P> = AuthenticatedMessage<FullSphinx, L, N, P>;
     pub type TruncatedSphinx = (SecretKey, Hmac<TruncatedSha256>, Sha256, ChaCha);
-    pub type TruncatedPacket<L, N, P> = Packet<TruncatedSphinx, L, N, P>;
+    pub type TruncatedPacket<L, N, P> = AuthenticatedMessage<TruncatedSphinx, L, N, P>;
 
     impl PseudoRandomStream<U16> for ChaCha {
         fn seed(v: GenericArray<u8, U16>) -> Self {
@@ -84,6 +84,7 @@ use self::packet::{FullSphinx, FullPacket, TruncatedSphinx, TruncatedPacket};
 fn packet() {
     use super::GlobalData;
     use generic_array::typenum::{U33, U20};
+    use abstract_cryptography::Array;
 
     let reference_packet = "\
                             02e90777e8702e3d587e17c8627a997b0225f4a5a5f82115f13046aab95513c6d6\
@@ -155,14 +156,14 @@ fn packet() {
         .collect::<Vec<_>>()
         .into_iter();
 
-    let data = GlobalData::new::<_, FullSphinx>(&secret_key, path).unwrap();
+    let (data, public_key) = GlobalData::new::<_, FullSphinx>(&secret_key, path).unwrap();
     let packet = FullPacket::<U33, U20, _>::new(data, associated_data, payloads, []).unwrap();
 
     use tirse::{DefaultBinarySerializer, WriteWrapper};
     use serde::Serialize;
 
     let s = DefaultBinarySerializer::<WriteWrapper<Vec<_>>, String>::new(Vec::new());
-    let v = packet.serialize(s).unwrap().consume().into_inner();
+    let v = (Array::serialize(&public_key), packet).serialize(s).unwrap().consume().into_inner();
 
     assert_eq!(hex::encode(v), reference_packet);
 }
@@ -177,6 +178,7 @@ fn path() {
     use std::fmt;
     use serde::{Serialize, Serializer};
     use tirse::{DefaultBinarySerializer, WriteWrapper};
+    use abstract_cryptography::Array;
 
     const MESSAGE_LENGTH: usize = 4096 - 224;
 
@@ -251,7 +253,8 @@ fn path() {
     let message = Message::random();
 
     let secret = SecretKey::new(&mut rand::thread_rng());
-    let data = GlobalData::new::<_, TruncatedSphinx>(&secret, path.into_iter()).unwrap();
+    let (data, public_key) = GlobalData::new::<_, TruncatedSphinx>(&secret, path.into_iter())
+        .unwrap();
     let packet = TruncatedPacket::<U19, U5, Message>::new(
         data,
         &[],
@@ -261,14 +264,15 @@ fn path() {
     .unwrap();
 
     let s = DefaultBinarySerializer::<WriteWrapper<Vec<_>>, String>::new(Vec::new());
-    let v = packet.serialize(s).unwrap().consume().into_inner();
+    let v = (Array::serialize(&public_key), &packet).serialize(s).unwrap().consume().into_inner();
 
-    let initial = (Left(packet), Vec::new());
-    let (last, output) = secrets
+    let initial = (Left(packet), Vec::new(), public_key);
+    let (last, output, _) = secrets
         .into_iter()
-        .fold(initial, |(packet, mut payloads), secret| {
+        .fold(initial, |(packet, mut payloads, public_key), secret| {
             let packet = packet.left().unwrap();
-            let local = LocalData::new::<TruncatedSphinx>(&secret, &packet.public_key).unwrap();
+            let (local, public_key) = LocalData::next::<TruncatedSphinx>(&secret, &public_key)
+                .unwrap();
             match packet.process(&[], &local).unwrap() {
                 Processed::Forward {
                     data: data,
@@ -276,7 +280,7 @@ fn path() {
                 } => {
                     dbg!(hex::encode(&data));
                     payloads.push(data);
-                    (Left(next), payloads)
+                    (Left(next), payloads, public_key)
                 },
                 Processed::Exit {
                     data: data,
@@ -285,7 +289,7 @@ fn path() {
                     dbg!(hex::encode(&data));
                     dbg!(hex::encode(message.as_ref()));
                     payloads.push(data);
-                    (Right(message), payloads)
+                    (Right(message), payloads, public_key)
                 },
             }
         });

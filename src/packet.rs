@@ -25,30 +25,23 @@ pub struct LocalData<A>
 where
     A: SecretKey + Array,
 {
-    pub this_id: A::PublicKey,
-    pub next_id: A::PublicKey,
-    pub shared_secret: GenericArray<u8, A::Length>,
+    pub shared_secret: SharedSecret<A>,
 }
 
 impl<A> LocalData<A>
 where
     A: SecretKey + Array,
 {
-    pub fn new<B>(local_secret_key: &A, public_key: &A::PublicKey) -> Result<Self, A::Error>
+    pub fn next<B>(secret_key: &A, this: &A::PublicKey) -> Result<(Self, A::PublicKey), A::Error>
     where
         B: Sphinx<AsymmetricKey = A>,
     {
         let contexts = A::contexts();
 
-        let temp = local_secret_key.dh(&contexts.1, public_key)?;
-        let shared_secret = B::tau(temp);
-        let blinding = B::blinding(public_key, &shared_secret);
-        let next_dh_key = A::from_inner(blinding).dh(&contexts.1, public_key)?;
-        Ok(LocalData {
-            this_id: Array::from_inner(public_key.serialize()),
-            next_id: next_dh_key,
-            shared_secret: shared_secret,
-        })
+        let shared_secret = B::tau(secret_key.dh(&contexts.1, this)?);
+        let blinding = A::from_inner(B::blinding(this, &shared_secret));
+        let next = blinding.dh(&contexts.1, this)?;
+        Ok((LocalData { shared_secret: shared_secret }, next))
     }
 }
 
@@ -57,7 +50,6 @@ where
     A: SecretKey + Array,
     N: ArrayLength<SharedSecret<A>>,
 {
-    pub public_key: A::PublicKey,
     pub shared_secrets: GenericArray<SharedSecret<A>, N>,
 }
 
@@ -66,7 +58,7 @@ where
     A: SecretKey + Array,
     N: ArrayLength<SharedSecret<A>>,
 {
-    pub fn new<H, B>(session_key: &A, path: H) -> Result<Self, A::Error>
+    pub fn new<H, B>(session_key: &A, path: H) -> Result<(Self, A::PublicKey), A::Error>
     where
         H: Iterator<Item = <B::AsymmetricKey as SecretKey>::PublicKey>,
         B: Sphinx<AsymmetricKey = A>,
@@ -96,10 +88,7 @@ where
 
         let mut shared_secrets_array = GenericArray::default();
         shared_secrets_array[0..shared_secrets.len()].clone_from_slice(shared_secrets.as_slice());
-        Ok(GlobalData {
-            shared_secrets: shared_secrets_array,
-            public_key: public_key,
-        })
+        Ok((GlobalData { shared_secrets: shared_secrets_array }, public_key))
     }
 }
 
@@ -112,7 +101,7 @@ where
 {
     Forward {
         data: GenericArray<u8, L>,
-        next: Packet<B, L, N, P>,
+        next: AuthenticatedMessage<B, L, N, P>,
     },
     Exit {
         data: GenericArray<u8, L>,
@@ -120,20 +109,19 @@ where
     },
 }
 
-pub struct Packet<B, L, N, P>
+pub struct AuthenticatedMessage<B, L, N, P>
 where
     B: Sphinx,
     L: ArrayLength<u8>,
     N: ArrayLength<PayloadHmac<L, B::MacLength>>,
     P: AsMut<[u8]>,
 {
-    pub public_key: <B::AsymmetricKey as SecretKey>::PublicKey,
     routing_info: Path<L, B::MacLength, N>,
     hmac: GenericArray<u8, B::MacLength>,
     message: P,
 }
 
-impl<B, L, N, P> Packet<B, L, N, P>
+impl<B, L, N, P> AuthenticatedMessage<B, L, N, P>
 where
     B: Sphinx,
     B::AsymmetricKey: Array,
@@ -153,10 +141,7 @@ where
     {
         use keystream::KeyStream;
 
-        let GlobalData {
-            shared_secrets: shared_secrets,
-            public_key: public_key,
-        } = data;
+        let GlobalData { shared_secrets: shared_secrets } = data;
         let mut hmac = GenericArray::default();
         let mut routing_info = Path::<L, B::MacLength, N>::new();
         let mut message = message;
@@ -194,8 +179,7 @@ where
             hmac = B::output(mu);
         });
 
-        Ok(Packet {
-            public_key: public_key,
+        Ok(AuthenticatedMessage {
             routing_info: routing_info,
             hmac: hmac,
             message: message,
@@ -245,8 +229,7 @@ where
                     message: message,
                 })
             } else {
-                let next = Packet {
-                    public_key: Array::from_inner(local.next_id.serialize()),
+                let next = AuthenticatedMessage {
                     routing_info: routing_info,
                     hmac: item_hmac,
                     message: message,
@@ -263,7 +246,7 @@ where
 
 #[cfg(feature = "serde-support")]
 mod serde_m {
-    use super::{Packet, Path, PayloadHmac, Sphinx};
+    use super::{AuthenticatedMessage, Path, PayloadHmac, Sphinx};
 
     use generic_array::{GenericArray, ArrayLength};
     use abstract_cryptography::{Array, SecretKey};
@@ -271,7 +254,7 @@ mod serde_m {
     use std::marker::PhantomData;
     use std::fmt;
 
-    impl<B, L, N, P> Serialize for Packet<B, L, N, P>
+    impl<B, L, N, P> Serialize for AuthenticatedMessage<B, L, N, P>
     where
         B: Sphinx,
         B::AsymmetricKey: Array,
@@ -285,8 +268,7 @@ mod serde_m {
         {
             use serde::ser::SerializeTuple;
 
-            let mut tuple = serializer.serialize_tuple(4)?;
-            tuple.serialize_element(&self.public_key.serialize())?;
+            let mut tuple = serializer.serialize_tuple(3)?;
             tuple.serialize_element(&self.routing_info)?;
             tuple.serialize_element(&self.hmac)?;
             tuple.serialize_element(&self.message)?;
@@ -294,7 +276,7 @@ mod serde_m {
         }
     }
 
-    impl<'de, B, L, N, P> Deserialize<'de> for Packet<B, L, N, P>
+    impl<'de, B, L, N, P> Deserialize<'de> for AuthenticatedMessage<B, L, N, P>
     where
         B: Sphinx,
         <B::AsymmetricKey as SecretKey>::Error: fmt::Display,
@@ -330,7 +312,7 @@ mod serde_m {
                 N: ArrayLength<PayloadHmac<L, B::MacLength>>,
                 P: AsMut<[u8]> + for<'d> Deserialize<'d>,
             {
-                type Value = Packet<B, L, N, P>;
+                type Value = AuthenticatedMessage<B, L, N, P>;
 
                 fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     write!(f, "bytes")
@@ -340,12 +322,6 @@ mod serde_m {
                 where
                     S: SeqAccess<'de>,
                 {
-                    let k: GenericArray<
-                        u8,
-                        <<B::AsymmetricKey as SecretKey>::PublicKey as Array>::Length,
-                    > = sequence
-                        .next_element()?
-                        .ok_or(Error::custom("not enough data"))?;
                     let p: Path<L, B::MacLength, N> = sequence
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
@@ -356,12 +332,7 @@ mod serde_m {
                         .next_element()?
                         .ok_or(Error::custom("not enough data"))?;
 
-                    let public_key = <B::AsymmetricKey as SecretKey>::check(&k)
-                        .map(|()| Array::from_inner(k))
-                        .map_err(|e| Error::custom(format!("{}", e)))?;
-
-                    Ok(Packet {
-                        public_key: public_key,
+                    Ok(AuthenticatedMessage {
                         routing_info: p,
                         hmac: m,
                         message: ms,
@@ -370,7 +341,7 @@ mod serde_m {
             }
 
             deserializer.deserialize_tuple(
-                4,
+                3,
                 V {
                     phantom_data: PhantomData::<(B, L, N, P)>,
                 },
@@ -380,12 +351,12 @@ mod serde_m {
 }
 
 mod implementations {
-    use super::{Packet, Sphinx, PayloadHmac, LocalData};
+    use super::{AuthenticatedMessage, Sphinx, PayloadHmac, LocalData};
     use generic_array::ArrayLength;
     use abstract_cryptography::{Array, SecretKey};
     use std::fmt;
 
-    impl<B, L, N, P> fmt::Debug for Packet<B, L, N, P>
+    impl<B, L, N, P> fmt::Debug for AuthenticatedMessage<B, L, N, P>
     where
         B: Sphinx,
         B::AsymmetricKey: Array,
@@ -396,7 +367,6 @@ mod implementations {
     {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             f.debug_struct("Packet")
-                .field("public_key", &self.public_key)
                 .field("routing_info", &self.routing_info)
                 .field("hmac", &self.hmac)
                 .field("message", &self.message)
@@ -404,7 +374,7 @@ mod implementations {
         }
     }
 
-    impl<B, L, N, P> PartialEq for Packet<B, L, N, P>
+    impl<B, L, N, P> PartialEq for AuthenticatedMessage<B, L, N, P>
     where
         B: Sphinx,
         <B::AsymmetricKey as SecretKey>::PublicKey: PartialEq,
@@ -413,14 +383,13 @@ mod implementations {
         P: PartialEq + AsMut<[u8]>,
     {
         fn eq(&self, other: &Self) -> bool {
-            self.public_key.eq(&other.public_key)
-                && self.routing_info.eq(&other.routing_info)
+            self.routing_info.eq(&other.routing_info)
                 && self.hmac.eq(&other.hmac)
                 && self.message.eq(&other.message)
         }
     }
 
-    impl<B, L, N, P> Eq for Packet<B, L, N, P>
+    impl<B, L, N, P> Eq for AuthenticatedMessage<B, L, N, P>
     where
         B: Sphinx,
         <B::AsymmetricKey as SecretKey>::PublicKey: PartialEq,
@@ -437,8 +406,6 @@ mod implementations {
     {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             f.debug_struct("LocalStuff")
-                .field("this_id", &self.this_id)
-                .field("next_id", &self.next_id)
                 .field("shared_secret", &self.shared_secret)
                 .finish()
         }
@@ -450,9 +417,7 @@ mod implementations {
         <A as SecretKey>::PublicKey: PartialEq,
     {
         fn eq(&self, other: &Self) -> bool {
-            self.this_id.eq(&other.this_id)
-                && self.next_id.eq(&other.next_id)
-                && self.shared_secret.eq(&other.shared_secret)
+            self.shared_secret.eq(&other.shared_secret)
         }
     }
 
