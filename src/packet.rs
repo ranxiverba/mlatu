@@ -21,30 +21,13 @@ impl fmt::Display for ProcessingError {
 
 impl Error for ProcessingError {}
 
-pub struct LocalStuff<A>
+pub struct LocalData<A>
 where
     A: SecretKey + Array,
 {
-    this_id: A::PublicKey,
-    next_id: A::PublicKey,
-    shared_secret: GenericArray<u8, <A as Array>::Length>,
-}
-
-impl<A> LocalStuff<A>
-where
-    A: SecretKey + Array,
-{
-    pub fn this_id(&self) -> &A::PublicKey {
-        &self.this_id
-    }
-
-    pub fn next_id(&self) -> &A::PublicKey {
-        &self.next_id
-    }
-
-    pub fn shared_secret(&self) -> &GenericArray<u8, <A as Array>::Length> {
-        &self.shared_secret
-    }
+    pub this_id: A::PublicKey,
+    pub next_id: A::PublicKey,
+    pub shared_secret: GenericArray<u8, <A as Array>::Length>,
 }
 
 pub enum Processed<B, L, N, P>
@@ -82,13 +65,13 @@ where
     B: Sphinx,
     B::AsymmetricKey: Array,
     L: ArrayLength<u8>,
-    N: ArrayLength<PayloadHmac<L, B::MacLength>> + ArrayLength<SharedSecret<B>>,
+    N: ArrayLength<PayloadHmac<L, B::MacLength>> + ArrayLength<SharedSecret<B::AsymmetricKey>>,
     P: AsMut<[u8]>,
 {
     pub fn data<H>(
         session_key: &B::AsymmetricKey,
         path: H,
-    ) -> Result<(GenericArray<SharedSecret<B>, N>, <B::AsymmetricKey as SecretKey>::PublicKey), <B::AsymmetricKey as SecretKey>::Error>
+    ) -> Result<(GenericArray<SharedSecret<B::AsymmetricKey>, N>, <B::AsymmetricKey as SecretKey>::PublicKey), <B::AsymmetricKey as SecretKey>::Error>
     where
         H: Iterator<Item = <B::AsymmetricKey as SecretKey>::PublicKey>,
     {
@@ -121,7 +104,7 @@ where
     }
 
     pub fn new<T, H>(
-        data: (GenericArray<SharedSecret<B>, N>, <B::AsymmetricKey as SecretKey>::PublicKey),
+        data: (GenericArray<SharedSecret<B::AsymmetricKey>, N>, <B::AsymmetricKey as SecretKey>::PublicKey),
         associated_data: T,
         payloads: H,
         message: P,
@@ -184,7 +167,7 @@ where
     pub fn accept(
         &self,
         secret_key: &B::AsymmetricKey,
-    ) -> Result<LocalStuff<B::AsymmetricKey>, <B::AsymmetricKey as SecretKey>::Error> {
+    ) -> Result<LocalData<B::AsymmetricKey>, <B::AsymmetricKey as SecretKey>::Error> {
         let contexts = <B::AsymmetricKey as SecretKey>::contexts();
 
         let public_key = &self.public_key;
@@ -193,7 +176,7 @@ where
         let blinding = B::blinding(public_key, &shared_secret);
         let next_dh_key =
             <B::AsymmetricKey as Array>::from_inner(blinding).dh(&contexts.1, public_key)?;
-        Ok(LocalStuff {
+        Ok(LocalData {
             this_id: Array::from_inner(public_key.serialize()),
             next_id: next_dh_key,
             shared_secret: shared_secret,
@@ -203,7 +186,7 @@ where
     pub fn process<T>(
         self,
         associated_data: T,
-        local: &LocalStuff<B::AsymmetricKey>,
+        local: &LocalData<B::AsymmetricKey>,
     ) -> Result<Processed<B, L, N, P>, ProcessingError>
     where
         T: AsRef<[u8]>,
@@ -213,7 +196,7 @@ where
         let (mut routing_info, hmac_received, mut message) =
             (self.routing_info, self.hmac, self.message);
 
-        let mu = B::mu(&local.shared_secret());
+        let mu = B::mu(&local.shared_secret);
         let mu = routing_info
             .as_ref()
             .iter()
@@ -224,12 +207,12 @@ where
         if hmac_received != hmac {
             Err(ProcessingError::MacMismatch)
         } else {
-            let mut stream = B::rho(&local.shared_secret());
+            let mut stream = B::rho(&local.shared_secret);
             let mut item = routing_info.pop();
             item ^= &mut stream;
             routing_info ^= &mut stream;
 
-            let mut stream = B::pi(&local.shared_secret());
+            let mut stream = B::pi(&local.shared_secret);
             stream.xor_read(message.as_mut()).unwrap();
 
             let PayloadHmac {
@@ -244,7 +227,7 @@ where
                 })
             } else {
                 let next = Packet {
-                    public_key: Array::from_inner(local.next_id().serialize()),
+                    public_key: Array::from_inner(local.next_id.serialize()),
                     routing_info: routing_info,
                     hmac: item_hmac,
                     message: message,
@@ -378,7 +361,7 @@ mod serde_m {
 }
 
 mod implementations {
-    use super::{Packet, Sphinx, PayloadHmac, LocalStuff};
+    use super::{Packet, Sphinx, PayloadHmac, LocalData};
     use generic_array::ArrayLength;
     use abstract_cryptography::{Array, SecretKey};
     use std::fmt;
@@ -428,7 +411,7 @@ mod implementations {
     {
     }
 
-    impl<A> fmt::Debug for LocalStuff<A>
+    impl<A> fmt::Debug for LocalData<A>
     where
         A: SecretKey + Array,
         <A as SecretKey>::PublicKey: fmt::Debug,
@@ -442,7 +425,7 @@ mod implementations {
         }
     }
 
-    impl<A> PartialEq for LocalStuff<A>
+    impl<A> PartialEq for LocalData<A>
     where
         A: SecretKey + Array,
         <A as SecretKey>::PublicKey: PartialEq,
@@ -454,7 +437,7 @@ mod implementations {
         }
     }
 
-    impl<A> Eq for LocalStuff<A>
+    impl<A> Eq for LocalData<A>
     where
         A: SecretKey + Array,
         <A as SecretKey>::PublicKey: PartialEq,
