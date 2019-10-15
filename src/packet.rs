@@ -4,6 +4,7 @@ use super::sphinx::{Sphinx, SharedSecret};
 use generic_array::{GenericArray, ArrayLength};
 use abstract_cryptography::{Array, SecretKey, TagError};
 use keystream::SeekableKeyStream;
+use either::Either;
 
 pub struct LocalData<A>
 where
@@ -16,15 +17,22 @@ impl<A> LocalData<A>
 where
     A: SecretKey + Array,
 {
-    pub fn next<B>(secret_key: &A, this: &A::PublicKey) -> Result<(Self, A::PublicKey), A::Error>
+    pub fn next<B>(
+        secret_key: &A,
+        this: &A::PublicKey,
+    ) -> Result<(Self, A::PublicKey), Either<<A as SecretKey>::Error, <A as Array>::Error>>
     where
         B: Sphinx<AsymmetricKey = A>,
     {
+        use self::Either::{Left, Right};
+
         let contexts = A::contexts();
 
-        let shared_secret = B::tau(secret_key.dh(&contexts.1, this)?);
-        let blinding = A::from_inner(B::blinding(this, &shared_secret));
-        let next = blinding.dh(&contexts.1, this)?;
+        let shared_secret = B::tau(secret_key.dh(&contexts.1, this).map_err(Left)?);
+        let blinding = A::from_raw(B::blinding(this, &shared_secret))
+            .map_err(Right)?;
+        let next = blinding.dh(&contexts.1, this)
+            .map_err(Left)?;
         Ok((LocalData { shared_secret: shared_secret }, next))
     }
 }
@@ -42,18 +50,23 @@ where
     A: SecretKey + Array,
     N: ArrayLength<SharedSecret<A>>,
 {
-    pub fn new<H, B>(session_key: &A, path: H) -> Result<(Self, A::PublicKey), A::Error>
+    pub fn new<H, B>(
+        session_key: &A,
+        path: H,
+    ) -> Result<(Self, A::PublicKey), Either<<A as SecretKey>::Error, <A as Array>::Error>>
     where
         H: Iterator<Item = <B::AsymmetricKey as SecretKey>::PublicKey>,
         B: Sphinx<AsymmetricKey = A>,
     {
+        use self::Either::{Left, Right};
+
         let contexts = A::contexts();
         let public_key = session_key.paired(&contexts.0);
 
         let initial = (
             Vec::with_capacity(N::to_usize()),
-            A::from_inner(session_key.serialize()),
-            Array::from_inner(public_key.serialize()),
+            A::from_raw(session_key.serialize()).map_err(Right)?,
+            Array::from_raw(public_key.serialize()).map_err(Left)?,
         );
 
         let mut path = path;
@@ -68,7 +81,7 @@ where
                 s.push(result);
                 Ok((s, secret, public))
             })
-            .map(|(s, _, _)| s)?;
+            .map(|(s, _, _)| s).map_err(Left)?;
 
         let mut shared_secrets_array = GenericArray::default();
         shared_secrets_array[0..shared_secrets.len()].clone_from_slice(shared_secrets.as_slice());

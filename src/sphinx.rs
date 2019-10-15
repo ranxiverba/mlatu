@@ -16,7 +16,7 @@ pub type SharedSecret<A> = GenericArray<u8, <A as Array>::Length>;
 pub trait Sphinx {
     type KeyLength: ArrayLength<u8>;
     type MacLength: ArrayLength<u8>;
-    type AsymmetricKey: Array + SecretKey;
+    type AsymmetricKey: SecretKey + Array;
     type Stream: KeyStream + SeekableKeyStream;
     type Collector;
 
@@ -44,7 +44,7 @@ pub trait Sphinx {
 
 impl<A, C, D, S> Sphinx for (A, C, D, S)
 where
-    A: Array + SecretKey,
+    A: SecretKey + Array,
     C: Mac,
     D: Default + Input + FixedOutput<OutputSize = A::Length>,
     S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,

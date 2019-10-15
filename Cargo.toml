@@ -29,11 +29,14 @@ version = "1.0"
 features = ["derive"]
 optional = true
 
+[dependencies.either]
+version = "1.5"
+
 [dev-dependencies.rand]
 version = "0.6"
 
 [dev-dependencies.secp256k1]
-version = "0.13"
+version = "0.15"
 features = ["rand"]
 
 [dev-dependencies.hmac]
@@ -44,9 +47,6 @@ version = "0.8"
 
 [dev-dependencies.chacha]
 version = "0.3"
-
-[dev-dependencies.either]
-version = "1.5"
 
 [dev-dependencies.tirse]
 version = "0.6"
