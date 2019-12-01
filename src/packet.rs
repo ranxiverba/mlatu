@@ -5,6 +5,7 @@ use generic_array::{GenericArray, ArrayLength};
 use abstract_cryptography::{Array, SecretKey, TagError};
 use keystream::SeekableKeyStream;
 use either::Either;
+use digest::{Input, FixedOutput};
 
 pub struct LocalData<A>
 where
@@ -34,6 +35,15 @@ where
         let next = blinding.dh(&contexts.1, this)
             .map_err(Left)?;
         Ok((LocalData { shared_secret: shared_secret }, next))
+    }
+
+    pub fn digest<D>(&self) -> Self
+    where
+        D: Default + Input + FixedOutput<OutputSize = A::Length>,
+    {
+        LocalData {
+            shared_secret: D::default().chain(&self.shared_secret).fixed_result(),
+        }
     }
 }
 
@@ -86,6 +96,19 @@ where
         let mut shared_secrets_array = GenericArray::default();
         shared_secrets_array[0..shared_secrets.len()].clone_from_slice(shared_secrets.as_slice());
         Ok((GlobalData { shared_secrets: shared_secrets_array }, public_key))
+    }
+
+    pub fn digest<D>(&self) -> Self
+    where
+        D: Default + Input + FixedOutput<OutputSize = A::Length>,
+    {
+        let mut shared_secrets_array = self.shared_secrets.clone();
+        shared_secrets_array.as_mut_slice().iter_mut().for_each(|x| {
+            *x = D::default().chain(x.as_ref()).fixed_result()
+        });
+        GlobalData {
+            shared_secrets: shared_secrets_array,
+        }
     }
 }
 
