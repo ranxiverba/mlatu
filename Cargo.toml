@@ -7,9 +7,9 @@ license = "Apache 2.0"
 repository = "https://github.com/ranxiverba/mlatu"
 description = "Sphinx mix network packet processor implemented in Rust"
 
-[dependencies.abstract-cryptography]
-git = "https://github.com/ranxiverba/abstract-cryptography.git"
-features = ["std", "secp256k1"]
+[dependencies.rac]
+git = "https://github.com/ranxiverba/rac.git"
+features = ["use_std", "secp256k1"]
 
 [dependencies.digest]
 version = "0.8"

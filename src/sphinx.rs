@@ -1,6 +1,6 @@
 use generic_array::{GenericArray, ArrayLength};
 use keystream::{KeyStream, SeekableKeyStream};
-use abstract_cryptography::{Array, SecretKey};
+use rac::{Line, LineValid, Curve, PackedCurve};
 use crypto_mac::Mac;
 use digest::{Input, FixedOutput};
 
@@ -11,12 +11,12 @@ where
     fn seed(v: GenericArray<u8, T>) -> Self;
 }
 
-pub type SharedSecret<A> = GenericArray<u8, <A as Array>::Length>;
+pub type SharedSecret<A> = GenericArray<u8, <<A as Curve>::Scalar as LineValid>::Length>;
 
 pub trait Sphinx {
     type KeyLength: ArrayLength<u8>;
     type MacLength: ArrayLength<u8>;
-    type AsymmetricKey: SecretKey + Array;
+    type AsymmetricKey: Curve;
     type Stream: KeyStream + SeekableKeyStream;
     type Collector;
 
@@ -32,21 +32,20 @@ pub trait Sphinx {
 
     fn pi(shared: &SharedSecret<Self::AsymmetricKey>) -> Self::Stream;
 
-    fn tau(
-        public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
-    ) -> SharedSecret<Self::AsymmetricKey>;
+    fn tau(public_key: Self::AsymmetricKey) -> SharedSecret<Self::AsymmetricKey>;
 
     fn blinding(
-        public_key: &<Self::AsymmetricKey as SecretKey>::PublicKey,
+        public_key: &Self::AsymmetricKey,
         shared: &SharedSecret<Self::AsymmetricKey>,
     ) -> SharedSecret<Self::AsymmetricKey>;
 }
 
 impl<A, C, D, S> Sphinx for (A, C, D, S)
 where
-    A: SecretKey + Array,
+    A: Curve,
+    PackedCurve<A::Scalar>: Line,
     C: Mac,
-    D: Default + Input + FixedOutput<OutputSize = A::Length>,
+    D: Default + Input + FixedOutput<OutputSize = <<A as Curve>::Scalar as LineValid>::Length>,
     S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
 {
     type KeyLength = C::KeySize;
@@ -89,20 +88,18 @@ where
         S::seed(key)
     }
 
-    fn tau(
-        public_key: <Self::AsymmetricKey as SecretKey>::PublicKey,
-    ) -> SharedSecret<Self::AsymmetricKey> {
+    fn tau(public_key: Self::AsymmetricKey) -> SharedSecret<Self::AsymmetricKey> {
         D::default()
-            .chain(&public_key.serialize()[..])
+            .chain(public_key.compress().clone_line().as_ref())
             .fixed_result()
     }
 
     fn blinding(
-        public_key: &<Self::AsymmetricKey as SecretKey>::PublicKey,
+        public_key: &Self::AsymmetricKey,
         shared: &SharedSecret<Self::AsymmetricKey>,
     ) -> SharedSecret<Self::AsymmetricKey> {
         D::default()
-            .chain(&public_key.serialize()[..])
+            .chain(public_key.compress().clone_line().as_ref())
             .chain(shared)
             .fixed_result()
     }
