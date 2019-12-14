@@ -2,7 +2,7 @@ use super::path::{PayloadHmac, Path};
 use super::sphinx::{Sphinx, SharedSecret};
 
 use generic_array::{GenericArray, ArrayLength};
-use rac::{Line, LineValid, Curve};
+use rac::{LineValid, Curve};
 use keystream::SeekableKeyStream;
 use digest::{Input, FixedOutput};
 
@@ -22,7 +22,8 @@ where
         B: Sphinx<AsymmetricKey = A>,
     {
         let shared_secret = B::tau(this.exp_ec(secret_key));
-        let blinding = A::Scalar::clone_array(&B::blinding(this, &shared_secret));
+        // safe to unwrap because array is result if hashing
+        let blinding = A::Scalar::try_clone_array(&B::blinding(this, &shared_secret)).unwrap();
         let next = this.exp_ec(&blinding);
         (
             LocalData {
@@ -52,7 +53,8 @@ where
 
 impl<A, N> GlobalData<A, N>
 where
-    A: Curve,
+    A: Curve + Clone,
+    A::Scalar: Clone,
     N: ArrayLength<SharedSecret<A>>,
 {
     pub fn new<H, B>(session_key: &A::Scalar, path: H) -> (Self, A)
@@ -66,15 +68,18 @@ where
 
         let initial = (
             Vec::with_capacity(N::to_usize()),
-            A::Scalar::clone_array(&session_key.clone_line()),
-            A::try_clone_array(&public_key.clone_line()).unwrap(),
+            session_key.clone(),
+            public_key.clone(),
         );
 
         let (shared_secrets, _, _) =
             path.fold(initial, |(mut s, mut secret, public), path_point| {
                 let shared_secret = B::tau(path_point.exp_ec(&secret));
                 let blinding = B::blinding(&public, &shared_secret);
-                secret = secret.mul_ff(&Line::clone_array(&blinding));
+                // safe to unwrap because the array is result of hashing
+                let blinding = <A::Scalar as LineValid>::try_clone_array(&blinding).unwrap();
+                // safe to unwrap because the scalar is trusted
+                secret = secret.mul_ff(&blinding).unwrap();
                 let public = A::base().exp_ec(&secret);
 
                 s.push(shared_secret);

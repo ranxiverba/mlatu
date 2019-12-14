@@ -1,6 +1,6 @@
 use generic_array::{GenericArray, ArrayLength};
 use keystream::{KeyStream, SeekableKeyStream};
-use rac::{Line, LineValid, Curve, PackedCurve};
+use rac::{LineValid, Curve};
 use crypto_mac::Mac;
 use digest::{Input, FixedOutput};
 
@@ -43,7 +43,6 @@ pub trait Sphinx {
 impl<A, C, D, S> Sphinx for (A, C, D, S)
 where
     A: Curve,
-    PackedCurve<A::Scalar>: Line,
     C: Mac,
     D: Default + Input + FixedOutput<OutputSize = <<A as Curve>::Scalar as LineValid>::Length>,
     S: PseudoRandomStream<C::OutputSize> + SeekableKeyStream,
